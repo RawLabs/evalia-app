@@ -1,3 +1,11 @@
 streamlit
 openai
-Pillow
+pillow
+numpy
+pandas
+plotly
+opencv-python
+scipy
+requests
+fpdf
+
