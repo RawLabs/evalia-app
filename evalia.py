@@ -1,5 +1,3 @@
-# evalia.py (Evalia Dev-Mode: Fixed Score Parsing)
-
 import openai
 import os
 import json
@@ -12,6 +10,8 @@ from PIL import Image
 import streamlit as st
 import requests
 from fpdf import FPDF
+import pandas as pd
+import plotly.express as px
 
 # Setup logging
 logging.basicConfig(filename='debug.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,11 +43,6 @@ def sanitize_input(text):
     text = re.sub(r'[^\w\s\.,!?]', '', text)
     return " ".join(text.strip().split())
 
-def bar_chart(score):
-    full = round(score)
-    empty = 10 - full
-    return "[" + "█" * full + "░" * empty + "]"
-
 def analyze_image(img_file):
     try:
         image_bytes = img_file.read()
@@ -76,6 +71,36 @@ def fetch_url_text(url):
         logger.error(f"URL fetch error: {e}")
         return f"Error fetching URL: {str(e)}"
 
+def detect_style_gpt(claim):
+    styles_list = ["Symbolic/metaphysical", "Conspiratorial", "Academic", "Emotional/personal", "Basic/blunt", "Exploratory"]
+    prompt = (
+        f"Classify the style of the following claim into one of these categories: {', '.join(styles_list)}. "
+        "Consider keywords and tone. "
+        "Return ONLY in this exact format: 'Style: X, Confidence: Y' where X is the style and Y is a number from 0.0 to 1.0."
+        f"\n\nClaim: {claim}"
+    )
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    content = response.choices[0].message.content.strip()
+    match = re.search(r"Style:\s*(.+?)\s*,\s*Confidence:\s*(\d*\.?\d+)", content, re.IGNORECASE)
+    if match:
+        style = match.group(1).strip()
+        confidence = float(match.group(2))
+        return style, confidence
+    return "Exploratory", 0.1
+
+def feedback_style_instruction(style):
+    return {
+        "Symbolic/metaphysical": "Respect metaphorical framing; gently guide toward evidence without dismissing symbolic meaning.",
+        "Conspiratorial": "Be clear and firm on facts, but maintain a respectful and curious tone. Avoid ridicule.",
+        "Academic": "Use precise language and address theoretical constructs with clarity.",
+        "Emotional/personal": "Be compassionate. Frame critique as support for personal growth.",
+        "Basic/blunt": "Keep it simple, direct, and helpful without jargon.",
+        "Exploratory": "Encourage inquiry and deeper exploration in a welcoming, curious tone."
+    }.get(style, "Encourage inquiry and deeper exploration in a welcoming, curious tone.")
+
 SCORING_PROMPT = """
 You are Evalia, an AI reasoning engine. Evaluate the following claim across five axes:
 1. Logic (0-10)
@@ -95,12 +120,10 @@ def score_claim(text):
             messages=[{"role": "user", "content": full_prompt}]
         )
         raw = response.choices[0].message.content.strip()
-        logger.info(f"GPT raw response: {raw}")
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             return json.loads(match.group())
-        else:
-            return {}
+        return {}
     except Exception as e:
         logger.error(f"Scoring error: {e}")
         return {}
@@ -127,13 +150,17 @@ def generate_pdf_report(entry):
     return pdf_file
 
 initialize_memory()
-st.set_page_config(page_title="Evalia - Claim Evaluator", layout="centered")
+st.set_page_config(page_title="Evalia - Claim Evaluator", layout="wide")
 st.title("🔍 Evalia – Evaluate with Confidence")
 st.markdown("Assess claims, URLs, and images using GPT-4o. Forensic score breakdown. Dev-mode ON.")
 
-claim_input = st.text_area("📌 Enter a claim for evaluation", height=150)
-url_input = st.text_input("🔗 Optional URL to analyze")
-image_input = st.file_uploader("🖼️ Upload image for OCR (optional)", type=["png", "jpg", "jpeg"])
+col1, col2 = st.columns(2)
+with col1:
+    claim_input = st.text_area("📌 Enter a claim for evaluation", height=200, placeholder="e.g., For such an entity to come anywhere near our planet is probably very bad news...")
+    url_input = st.text_input("🔗 Optional URL to analyze", placeholder="Insert URL here")
+with col2:
+    image_input = st.file_uploader("🖼️ Upload image for OCR (optional)", type=["png", "jpg", "jpeg"])
+
 cross_eval = st.checkbox("🔁 Evaluate image and claim as a combined context")
 
 download_ready = False
@@ -152,7 +179,7 @@ if st.button("Run Evaluation"):
     if url_input:
         with st.spinner("Fetching URL..."):
             url_text = fetch_url_text(url_input)
-            st.text_area("🔎 Extracted URL text", url_text[:1000])
+            st.text_area("🔎 Extracted URL text", url_text[:1000], height=100)
             text_blob += "\n" + url_text
 
     if image_input:
@@ -167,15 +194,20 @@ if st.button("Run Evaluation"):
 
     if text_blob.strip():
         with st.spinner("Scoring text..."):
+            style, style_confidence = detect_style_gpt(text_blob)
+            style_guidance = feedback_style_instruction(style)
             scores = score_claim(text_blob)
             analysis_log["scores"] = scores
+            analysis_log["style"] = style
 
         if scores:
             st.subheader("📊 Evaluation Breakdown")
-            for category in ["logic", "natural", "historical", "source", "overall"]:
-                label = category.capitalize() if category != "natural" else "Natural Law"
-                score = scores.get(category, 0)
-                st.write(f"**{label}**: {bar_chart(score)} {score}/10")
+            categories = ["logic", "natural", "historical", "source", "overall"]
+            scores_data = {k: scores.get(k, 0) for k in categories}
+            df = pd.DataFrame({"Category": [k.capitalize() for k in categories], "Score": [scores.get(k, 0) for k in categories]})
+            fig = px.bar(df, x='Score', y='Category', orientation='h', title='Score Overview', range_x=[0, 10], color='Score', color_continuous_scale='blues')
+            fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No scores returned. Try again or rephrase.")
 
