@@ -13,6 +13,7 @@ from fpdf import FPDF
 import pandas as pd
 import plotly.express as px
 import logging.handlers
+import unicodedata  # For PDF Unicode sanitization
 
 # Configure robust logging
 log_file = "evalia_debug.log"
@@ -127,6 +128,21 @@ def score_claim(text):
         logger.error("Scoring error for claim '%s'", text[:50] + "..." if len(text) > 50 else text, exc_info=True)
         return "Error: Unable to score claim due to an issue."
 
+def sanitize_for_pdf(text):
+    # Replace Unicode superscripts/subscripts with ASCII equivalents
+    superscript_map = {
+        '⁰': '^0', '¹': '^1', '²': '^2', '³': '^3', '⁴': '^4', '⁵': '^5', '⁶': '^6', '⁷': '^7', '⁸': '^8', '⁹': '^9',
+        '⁻': '^-'
+    }
+    subscript_map = {
+        '₀': '_0', '₁': '_1', '₂': '_2', '₃': '_3', '₄': '_4', '₅': '_5', '₆': '_6', '₇': '_7', '₈': '_8', '₉': '_9'
+    }
+    text = ''.join(superscript_map.get(c, c) for c in text)
+    text = ''.join(subscript_map.get(c, c) for c in text)
+    # Remove or replace other non-latin1 characters
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    return text
+
 def generate_pdf_report(entry):
     try:
         pdf = FPDF()
@@ -135,7 +151,8 @@ def generate_pdf_report(entry):
         pdf.cell(200, 10, txt="Evalia Claim Analysis Report", ln=True, align='C')
         pdf.ln(10)
         pdf.cell(0, 10, f"Timestamp: {entry['timestamp']}", ln=True)
-        pdf.multi_cell(0, 10, f"Claim: {entry['claim']}")
+        sanitized_claim = sanitize_for_pdf(entry["claim"])
+        pdf.multi_cell(0, 10, f"Claim: {sanitized_claim}")
         if entry["url"]:
             pdf.multi_cell(0, 10, f"URL: {entry['url']}")
         if entry["image_text"]:
@@ -190,6 +207,14 @@ st.markdown(
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         font-family: 'Roboto', sans-serif;
+        line-height: 1.6;  /* Better spacing */
+        margin-bottom: 10px;  /* Paragraph margins */
+    }}
+    .output-box p {{
+        margin-bottom: 15px;  /* Space between paragraphs */
+    }}
+    .output-box ul, .output-box ol {{
+        margin-bottom: 15px;  /* List spacing */
     }}
     .stTextArea, .stFileUploader, .stTextInput {{
         background-color: #282828;
@@ -249,25 +274,27 @@ if st.button("Run Evaluation"):
     if text_blob.strip():
         with st.spinner("Scoring text..."):
             result = score_claim(text_blob)
-            st.markdown(f'<div class="output-box">{result}</div>', unsafe_allow_html=True)
             categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
             scores = {}
             for cat in categories:
-                # Updated regex to handle "- **Category**: bar score/10" format
                 match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", result, re.IGNORECASE | re.DOTALL)
                 if match:
                     scores[cat.lower()] = int(match.group(1))
             analysis_log["scores"] = scores
             logger.info(f"Parsed scores for claim '{text_blob[:50]}...': {scores}")
 
-        if scores:
-            df = pd.DataFrame({"Category": categories, "Score": [scores.get(cat.lower(), 0) for cat in categories]})
-            fig = px.bar(df, x='Score', y='Category', orientation='h', title='Score Overview', range_x=[0, 10], color='Score', color_continuous_scale='blues')
-            fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            logger.warning("No scores parsed from response for claim '%s'", text_blob[:50] + "..." if len(text_blob) > 50 else text_blob)
-            st.warning("No scores parsed from response. Check logs for details or rephrase.")
+            # Place chart above text
+            if scores:
+                df = pd.DataFrame({"Category": categories, "Score": [scores.get(cat.lower(), 0) for cat in categories]})
+                fig = px.bar(df, x='Score', y='Category', orientation='h', title='Score Overview', range_x=[0, 10], color='Score', color_continuous_scale='blues')
+                fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                logger.warning("No scores parsed from response for claim '%s'", text_blob[:50] + "..." if len(text_blob) > 50 else text_blob)
+                st.warning("No scores parsed from response. Check logs for details or rephrase.")
+
+            # Then display text
+            st.markdown(f'<div class="output-box">{result}</div>', unsafe_allow_html=True)
 
     if analysis_log["scores"] or analysis_log["image_text"]:
         save_to_memory(analysis_log)
