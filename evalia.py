@@ -89,9 +89,9 @@ def fetch_url_text(url):
         return f"Error fetching URL: {str(e)}"
 
 SCORING_PROMPT = """
-You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown:
+You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified:
 - 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
-- 📊 Bar-style Score Overview (use exactly: Category: ███░░░░░░░ 3/10 format for each):
+- 📊 Bar-style Score Overview (use exactly: "Category: ███░░░░░░░ 3/10" format for each, no extra text or styling):
   - Logic: ███░░░░░░░ 3/10
   - Natural Law: ██░░░░░░░░ 2/10
   - Historical Accuracy: ████░░░░░░ 4/10
@@ -109,7 +109,7 @@ You are Evalia, an AI reasoning engine. Evaluate the following claim and provide
 - 🎯 Truth Drift Score: Grounded / Speculative / Detached
 - 📊 Claim Length: Word count
 - ⏳ Temporal Reference: Recent/timeless/historical/future-focused
-Ensure scores are in the exact "Category: ███░░░░░░░ 3/10" format for parsing.
+Ensure scores are in the exact "Category: ███░░░░░░░ 3/10" format for parsing, with no bold or extra characters.
 """
 
 def score_claim(text):
@@ -253,7 +253,8 @@ if st.button("Run Evaluation"):
             categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
             scores = {}
             for cat in categories:
-                match = re.search(rf"{re.escape(cat)}:.*?(\d+)/10", result, re.IGNORECASE | re.DOTALL)
+                # Updated regex to handle "- **Category**: bar score/10" format
+                match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", result, re.IGNORECASE | re.DOTALL)
                 if match:
                     scores[cat.lower()] = int(match.group(1))
             analysis_log["scores"] = scores
