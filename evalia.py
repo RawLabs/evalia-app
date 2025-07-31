@@ -72,22 +72,27 @@ def fetch_url_text(url):
         return f"Error fetching URL: {str(e)}"
 
 SCORING_PROMPT = """
-You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis:
+You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown:
 - 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
-- 📊 Bar-style Score Overview: Logic (0-10), Natural Law (0-10), Historical Accuracy (0-10), Source Credibility (0-10), Overall Reasonableness (0-10)
-- 🌺 Grounding Meter: Unverified ←─█ to ░─→ Fact (describe position)
-- 🧠 Emotion Meter: Neutral ←─█ to ░─→ Charged (describe intensity)
-- 🤖 AI Origin: Human ←─█ to ░─→ AI (assess likelihood)
-- 📝 Detected Style: Symbolic/metaphysical, Conspiratorial, Academic, Emotional/personal, Basic/blunt, Exploratory (with confidence 0.0-1.0)
-- 🧪 Reasoning per category: Brief explanation for each score
+- 📊 Bar-style Score Overview (use █ for filled, ░ for empty, e.g., ███░░░░░░░ 3/10 for each):
+  Logic: ███░░░░░░░ 3/10
+  Natural Law: ██░░░░░░░░ 2/10
+  Historical Accuracy: ████░░░░░░ 4/10
+  Source Credibility: █░░░░░░░░░ 1/10
+  Overall Reasonableness: ███░░░░░░░ 3/10
+- 🌺 Grounding Meter: Unverified ←─███░░░░░░─→ Fact (describe position, e.g., Leaning Unverified)
+- 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)
+- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood)
+- 📝 Detected Style: e.g., Symbolic/metaphysical (with confidence 0.0-1.0)
+- 🧪 Reasoning per category: Brief explanation for each
 - 📚 Relevant Sources & Background: 1-2 reputable sources
 - 📌 Suggested Further Research: Guidance on next steps
-- 🧽 Final Commentary: Human, persuasive, encouraging self-verification
+- 🧽 Final Commentary: Human-like, persuasive, encouraging self-verification
 - 📾 Confidence Level: Percentage with rationale
 - 🎯 Truth Drift Score: Grounded / Speculative / Detached
 - 📊 Claim Length: Word count
 - ⏳ Temporal Reference: Recent/timeless/historical/future-focused
-Return the response as well-structured Markdown.
+Ensure scores are in the exact bar format for parsing.
 """
 
 def score_claim(text):
@@ -126,12 +131,56 @@ def generate_pdf_report(entry):
 
 initialize_memory()
 st.set_page_config(page_title="Evalia - Claim Evaluator", layout="wide")
+
+# Load background image
+try:
+    with open("68887836-metal-background-texture-of-titanium-sheet-of-metal-surface-steel.jpg", "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode()
+    background_image = f"data:image/jpeg;base64,{encoded_string}"
+except FileNotFoundError:
+    logger.warning("Background image not found. Falling back to gradient.")
+    background_image = "linear-gradient(to bottom, #A9A9A9, #FFFFFF)"
+
+st.markdown(
+    f"""
+    <style>
+    .stApp {{
+        background-image: url("{background_image}");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        color: #FFFFFF;  /* White text for readability on dark/metal bg */
+    }}
+    .output-box {{
+        background-color: rgba(40, 40, 40, 0.8);  /* Semi-transparent dark box */
+        color: #E0E0E0;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        font-family: 'Roboto', sans-serif;
+    }}
+    .stTextArea, .stFileUploader, .stTextInput {{
+        background-color: #282828;
+        color: #E0E0E0;
+        border: 1px solid #003087;
+        border-radius: 8px;
+    }}
+    .stButton>button {{
+        background-color: #003087;
+        color: white;
+        border-radius: 8px;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("🔍 Evalia – Evaluate with Confidence")
 st.markdown("Evaluate claims, images, or videos for plausibility, credibility, and AI origin. Paste a claim or upload media to get started.")
 
 col1, col2 = st.columns(2)
 with col1:
-    claim_input = st.text_area("Paste your claim here:", placeholder="e.g., Ever since 5G towers went up, I’ve seen fewer bees...", height=200)
+    claim_input = st.text_area("Paste your claim here:", placeholder="e.g., Ever since 5G towers went up...", height=200)
     url_input = st.text_input("Enter source URL (optional):", placeholder="Insert URL here")
 with col2:
     image_file = st.file_uploader("Upload an image or meme (optional)", type=["png", "jpg", "jpeg"])
@@ -168,12 +217,12 @@ if st.button("Run Evaluation"):
     if text_blob.strip():
         with st.spinner("Scoring text..."):
             result = score_claim(text_blob)
-            st.markdown(result)
-            # Parse scores for chart (simplified parsing, adjust based on actual response format)
+            st.markdown(f'<div class="output-box">{result}</div>', unsafe_allow_html=True)
+            # Improved parsing for scores with bars
             categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
             scores = {}
             for cat in categories:
-                match = re.search(rf"{cat}: (\d+)/10", result)
+                match = re.search(rf"{cat}:.*?(\d+)/10", result, re.IGNORECASE | re.DOTALL)
                 if match:
                     scores[cat.lower()] = int(match.group(1))
             analysis_log["scores"] = scores
@@ -184,7 +233,7 @@ if st.button("Run Evaluation"):
             fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("No scores returned. Try again or rephrase.")
+            st.warning("No scores parsed from response. Check formatting or rephrase.")
 
     if analysis_log["scores"] or analysis_log["image_text"]:
         save_to_memory(analysis_log)
