@@ -12,14 +12,26 @@ import requests
 from fpdf import FPDF
 import pandas as pd
 import plotly.express as px
+import logging.handlers
 
-# Setup logging
-logging.basicConfig(filename='debug.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Configure robust logging
+log_file = "evalia_debug.log"
+logger = logging.getLogger("EvaliaLogger")
+logger.setLevel(logging.DEBUG)
+fh = logging.handlers.RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3)
+fh.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s - [File: %(pathname)s, Line: %(lineno)d] - %(exc_info)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
+if os.getenv("ENV") != "STREAMLIT_CLOUD":
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
-# API Key Check
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
+    logger.error("OPENAI_API_KEY not set in environment. Please configure it in Streamlit Cloud.")
     st.error("OPENAI_API_KEY not set in environment. Please configure it in Streamlit Cloud.")
     st.stop()
 
@@ -30,18 +42,23 @@ def initialize_memory():
     if not os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, 'w') as f:
             json.dump([], f)
+        logger.info("Initialized memory file: %s", MEMORY_FILE)
 
 def save_to_memory(entry):
-    with open(MEMORY_FILE, 'r+') as f:
-        data = json.load(f)
-        data.append(entry)
-        f.seek(0)
-        json.dump(data, f, indent=2)
+    try:
+        with open(MEMORY_FILE, 'r+') as f:
+            data = json.load(f)
+            data.append(entry)
+            f.seek(0)
+            json.dump(data, f, indent=2)
+        logger.info("Saved to memory: %s", entry["claim"][:50] + "..." if len(entry["claim"]) > 50 else entry["claim"])
+    except Exception as e:
+        logger.error("Failed to save to memory", exc_info=True)
 
 def sanitize_input(text):
     text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
     text = re.sub(r'[^\w\s\.,!?]', '', text)
-    return " ".join(text.strip().split())
+    return " ".join(text.strip())
 
 def analyze_image(img_file):
     try:
@@ -60,7 +77,7 @@ def analyze_image(img_file):
         )
         return sanitize_input(response.choices[0].message.content) or "No text extracted."
     except Exception as e:
-        logger.error(f"Image analysis error: {e}")
+        logger.error("Image analysis error for file %s", img_file.name if img_file else "unknown", exc_info=True)
         return f"Error extracting text: {str(e)}"
 
 def fetch_url_text(url):
@@ -68,7 +85,7 @@ def fetch_url_text(url):
         r = requests.get(url, timeout=10)
         return sanitize_input(r.text[:3000])
     except Exception as e:
-        logger.error(f"URL fetch error: {e}")
+        logger.error("URL fetch error for %s", url, exc_info=True)
         return f"Error fetching URL: {str(e)}"
 
 SCORING_PROMPT = """
@@ -104,43 +121,56 @@ def score_claim(text):
             messages=[{"role": "user", "content": full_prompt}]
         )
         raw_response = response.choices[0].message.content.strip()
-        logger.info(f"Raw GPT response: {raw_response}")  # Debug log
+        logger.info("Raw GPT response for claim '%s': %s", cleaned[:50] + "..." if len(cleaned) > 50 else cleaned, raw_response)
         return raw_response
     except Exception as e:
-        logger.error(f"Scoring error: {e}")
+        logger.error("Scoring error for claim '%s'", text[:50] + "..." if len(text) > 50 else text, exc_info=True)
         return "Error: Unable to score claim due to an issue."
 
 def generate_pdf_report(entry):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Evalia Claim Analysis Report", ln=True, align='C')
-    pdf.ln(10)
-    pdf.cell(0, 10, f"Timestamp: {entry['timestamp']}", ln=True)
-    pdf.multi_cell(0, 10, f"Claim: {entry['claim']}")
-    if entry["url"]:
-        pdf.multi_cell(0, 10, f"URL: {entry['url']}")
-    if entry["image_text"]:
-        pdf.multi_cell(0, 10, f"Extracted Image Text: {entry['image_text']}")
-    pdf.ln(5)
-    pdf.cell(0, 10, "Scores:", ln=True)
-    for k, v in entry["scores"].items():
-        pdf.cell(0, 10, f"  {k.capitalize()}: {v}/10", ln=True)
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt="Evalia Claim Analysis Report", ln=True, align='C')
+        pdf.ln(10)
+        pdf.cell(0, 10, f"Timestamp: {entry['timestamp']}", ln=True)
+        pdf.multi_cell(0, 10, f"Claim: {entry['claim']}")
+        if entry["url"]:
+            pdf.multi_cell(0, 10, f"URL: {entry['url']}")
+        if entry["image_text"]:
+            pdf.multi_cell(0, 10, f"Extracted Image Text: {entry['image_text']}")
+        pdf.ln(5)
+        pdf.cell(0, 10, "Scores:", ln=True)
+        for k, v in entry["scores"].items():
+            pdf.cell(0, 10, f"  {k.capitalize()}: {v}/10", ln=True)
 
-    pdf_file = f"evalia_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    pdf.output(pdf_file)
-    return pdf_file
+        pdf_file = f"evalia_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        pdf.output(pdf_file)
+        logger.info("Generated PDF report: %s", pdf_file)
+        return pdf_file
+    except Exception as e:
+        logger.error("Failed to generate PDF report", exc_info=True)
+        return None
 
 initialize_memory()
 st.set_page_config(page_title="Evalia - Claim Evaluator", layout="wide")
 
 # Load background image
+background_image = None
 try:
-    with open("68887836-metal-background-texture-of-titanium-sheet-of-metal-surface-steel.jpg", "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode()
-    background_image = f"data:image/jpeg;base64,{encoded_string}"
-except FileNotFoundError:
-    logger.warning("Background image not found. Falling back to gradient.")
+    image_path = "68887836-metal-background-texture-of-titanium-sheet-of-metal-surface-steel.jpg"
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        background_image = f"data:image/jpeg;base64,{encoded_string}"
+        logger.info("Background image loaded successfully: %s", image_path)
+    else:
+        logger.warning("Background image not found at %s", image_path)
+except Exception as e:
+    logger.error("Failed to load background image", exc_info=True)
+if not background_image:
+    logger.warning("Falling back to gradient due to missing image.")
     background_image = "linear-gradient(to bottom, #A9A9A9, #FFFFFF)"
 
 st.markdown(
@@ -220,7 +250,6 @@ if st.button("Run Evaluation"):
         with st.spinner("Scoring text..."):
             result = score_claim(text_blob)
             st.markdown(f'<div class="output-box">{result}</div>', unsafe_allow_html=True)
-            # Enhanced parsing for bar-style scores
             categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
             scores = {}
             for cat in categories:
@@ -228,7 +257,7 @@ if st.button("Run Evaluation"):
                 if match:
                     scores[cat.lower()] = int(match.group(1))
             analysis_log["scores"] = scores
-            logger.info(f"Parsed scores: {scores}")  # Debug log
+            logger.info(f"Parsed scores for claim '{text_blob[:50]}...': {scores}")
 
         if scores:
             df = pd.DataFrame({"Category": categories, "Score": [scores.get(cat.lower(), 0) for cat in categories]})
@@ -236,7 +265,8 @@ if st.button("Run Evaluation"):
             fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("No scores parsed from response. Check logs for raw GPT output or rephrase.")
+            logger.warning("No scores parsed from response for claim '%s'", text_blob[:50] + "..." if len(text_blob) > 50 else text_blob)
+            st.warning("No scores parsed from response. Check logs for details or rephrase.")
 
     if analysis_log["scores"] or analysis_log["image_text"]:
         save_to_memory(analysis_log)
