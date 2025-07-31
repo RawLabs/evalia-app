@@ -74,12 +74,12 @@ def fetch_url_text(url):
 SCORING_PROMPT = """
 You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown:
 - 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
-- 📊 Bar-style Score Overview (use █ for filled, ░ for empty, e.g., ███░░░░░░░ 3/10 for each):
-  Logic: ███░░░░░░░ 3/10
-  Natural Law: ██░░░░░░░░ 2/10
-  Historical Accuracy: ████░░░░░░ 4/10
-  Source Credibility: █░░░░░░░░░ 1/10
-  Overall Reasonableness: ███░░░░░░░ 3/10
+- 📊 Bar-style Score Overview (use exactly: Category: ███░░░░░░░ 3/10 format for each):
+  - Logic: ███░░░░░░░ 3/10
+  - Natural Law: ██░░░░░░░░ 2/10
+  - Historical Accuracy: ████░░░░░░ 4/10
+  - Source Credibility: █░░░░░░░░░ 1/10
+  - Overall Reasonableness: ███░░░░░░░ 3/10
 - 🌺 Grounding Meter: Unverified ←─███░░░░░░─→ Fact (describe position, e.g., Leaning Unverified)
 - 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)
 - 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood)
@@ -92,7 +92,7 @@ You are Evalia, an AI reasoning engine. Evaluate the following claim and provide
 - 🎯 Truth Drift Score: Grounded / Speculative / Detached
 - 📊 Claim Length: Word count
 - ⏳ Temporal Reference: Recent/timeless/historical/future-focused
-Ensure scores are in the exact bar format for parsing.
+Ensure scores are in the exact "Category: ███░░░░░░░ 3/10" format for parsing.
 """
 
 def score_claim(text):
@@ -103,7 +103,9 @@ def score_claim(text):
             model="gpt-4o",
             messages=[{"role": "user", "content": full_prompt}]
         )
-        return response.choices[0].message.content.strip()
+        raw_response = response.choices[0].message.content.strip()
+        logger.info(f"Raw GPT response: {raw_response}")  # Debug log
+        return raw_response
     except Exception as e:
         logger.error(f"Scoring error: {e}")
         return "Error: Unable to score claim due to an issue."
@@ -149,10 +151,10 @@ st.markdown(
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        color: #FFFFFF;  /* White text for readability on dark/metal bg */
+        color: #FFFFFF;
     }}
     .output-box {{
-        background-color: rgba(40, 40, 40, 0.8);  /* Semi-transparent dark box */
+        background-color: rgba(40, 40, 40, 0.8);
         color: #E0E0E0;
         padding: 20px;
         border-radius: 8px;
@@ -218,14 +220,15 @@ if st.button("Run Evaluation"):
         with st.spinner("Scoring text..."):
             result = score_claim(text_blob)
             st.markdown(f'<div class="output-box">{result}</div>', unsafe_allow_html=True)
-            # Improved parsing for scores with bars
+            # Enhanced parsing for bar-style scores
             categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
             scores = {}
             for cat in categories:
-                match = re.search(rf"{cat}:.*?(\d+)/10", result, re.IGNORECASE | re.DOTALL)
+                match = re.search(rf"{re.escape(cat)}:.*?(\d+)/10", result, re.IGNORECASE | re.DOTALL)
                 if match:
                     scores[cat.lower()] = int(match.group(1))
             analysis_log["scores"] = scores
+            logger.info(f"Parsed scores: {scores}")  # Debug log
 
         if scores:
             df = pd.DataFrame({"Category": categories, "Score": [scores.get(cat.lower(), 0) for cat in categories]})
@@ -233,7 +236,7 @@ if st.button("Run Evaluation"):
             fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("No scores parsed from response. Check formatting or rephrase.")
+            st.warning("No scores parsed from response. Check logs for raw GPT output or rephrase.")
 
     if analysis_log["scores"] or analysis_log["image_text"]:
         save_to_memory(analysis_log)
