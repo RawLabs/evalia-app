@@ -17,3 +17,7 @@ __pycache__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Evalia app logs
+evalia_debug.log
+evalia_debug.log.*
