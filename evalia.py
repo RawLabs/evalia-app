@@ -71,44 +71,23 @@ def fetch_url_text(url):
         logger.error(f"URL fetch error: {e}")
         return f"Error fetching URL: {str(e)}"
 
-def detect_style_gpt(claim):
-    styles_list = ["Symbolic/metaphysical", "Conspiratorial", "Academic", "Emotional/personal", "Basic/blunt", "Exploratory"]
-    prompt = (
-        f"Classify the style of the following claim into one of these categories: {', '.join(styles_list)}. "
-        "Consider keywords and tone. "
-        "Return ONLY in this exact format: 'Style: X, Confidence: Y' where X is the style and Y is a number from 0.0 to 1.0."
-        f"\n\nClaim: {claim}"
-    )
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    content = response.choices[0].message.content.strip()
-    match = re.search(r"Style:\s*(.+?)\s*,\s*Confidence:\s*(\d*\.?\d+)", content, re.IGNORECASE)
-    if match:
-        style = match.group(1).strip()
-        confidence = float(match.group(2))
-        return style, confidence
-    return "Exploratory", 0.1
-
-def feedback_style_instruction(style):
-    return {
-        "Symbolic/metaphysical": "Respect metaphorical framing; gently guide toward evidence without dismissing symbolic meaning.",
-        "Conspiratorial": "Be clear and firm on facts, but maintain a respectful and curious tone. Avoid ridicule.",
-        "Academic": "Use precise language and address theoretical constructs with clarity.",
-        "Emotional/personal": "Be compassionate. Frame critique as support for personal growth.",
-        "Basic/blunt": "Keep it simple, direct, and helpful without jargon.",
-        "Exploratory": "Encourage inquiry and deeper exploration in a welcoming, curious tone."
-    }.get(style, "Encourage inquiry and deeper exploration in a welcoming, curious tone.")
-
 SCORING_PROMPT = """
-You are Evalia, an AI reasoning engine. Evaluate the following claim across five axes:
-1. Logic (0-10)
-2. Natural Law (0-10)
-3. Historical Accuracy (0-10)
-4. Source Credibility (0-10)
-5. Overall Reasonableness (0-10)
-Return results as compact JSON like: {"logic": 7, "natural": 5, "historical": 6, "source": 4, "overall": 6}
+You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis:
+- 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
+- 📊 Bar-style Score Overview: Logic (0-10), Natural Law (0-10), Historical Accuracy (0-10), Source Credibility (0-10), Overall Reasonableness (0-10)
+- 🌺 Grounding Meter: Unverified ←─█ to ░─→ Fact (describe position)
+- 🧠 Emotion Meter: Neutral ←─█ to ░─→ Charged (describe intensity)
+- 🤖 AI Origin: Human ←─█ to ░─→ AI (assess likelihood)
+- 📝 Detected Style: Symbolic/metaphysical, Conspiratorial, Academic, Emotional/personal, Basic/blunt, Exploratory (with confidence 0.0-1.0)
+- 🧪 Reasoning per category: Brief explanation for each score
+- 📚 Relevant Sources & Background: 1-2 reputable sources
+- 📌 Suggested Further Research: Guidance on next steps
+- 🧽 Final Commentary: Human, persuasive, encouraging self-verification
+- 📾 Confidence Level: Percentage with rationale
+- 🎯 Truth Drift Score: Grounded / Speculative / Detached
+- 📊 Claim Length: Word count
+- ⏳ Temporal Reference: Recent/timeless/historical/future-focused
+Return the response as well-structured Markdown.
 """
 
 def score_claim(text):
@@ -119,14 +98,10 @@ def score_claim(text):
             model="gpt-4o",
             messages=[{"role": "user", "content": full_prompt}]
         )
-        raw = response.choices[0].message.content.strip()
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        return {}
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"Scoring error: {e}")
-        return {}
+        return "Error: Unable to score claim due to an issue."
 
 def generate_pdf_report(entry):
     pdf = FPDF()
@@ -152,16 +127,15 @@ def generate_pdf_report(entry):
 initialize_memory()
 st.set_page_config(page_title="Evalia - Claim Evaluator", layout="wide")
 st.title("🔍 Evalia – Evaluate with Confidence")
-st.markdown("Assess claims, URLs, and images using GPT-4o. Forensic score breakdown. Dev-mode ON.")
+st.markdown("Evaluate claims, images, or videos for plausibility, credibility, and AI origin. Paste a claim or upload media to get started.")
 
 col1, col2 = st.columns(2)
 with col1:
-    claim_input = st.text_area("📌 Enter a claim for evaluation", height=200, placeholder="e.g., For such an entity to come anywhere near our planet is probably very bad news...")
-    url_input = st.text_input("🔗 Optional URL to analyze", placeholder="Insert URL here")
+    claim_input = st.text_area("Paste your claim here:", placeholder="e.g., Ever since 5G towers went up, I’ve seen fewer bees...", height=200)
+    url_input = st.text_input("Enter source URL (optional):", placeholder="Insert URL here")
 with col2:
-    image_input = st.file_uploader("🖼️ Upload image for OCR (optional)", type=["png", "jpg", "jpeg"])
-
-cross_eval = st.checkbox("🔁 Evaluate image and claim as a combined context")
+    image_file = st.file_uploader("Upload an image or meme (optional)", type=["png", "jpg", "jpeg"])
+    video_file = st.file_uploader("Upload a video (optional)", type=["mp4", "mov", "mpeg4"])
 
 download_ready = False
 pdf_generated = None
@@ -172,7 +146,7 @@ if st.button("Run Evaluation"):
         "claim": claim_input,
         "url": url_input,
         "image_text": None,
-        "scores": None
+        "scores": {}
     }
 
     text_blob = claim_input
@@ -182,29 +156,30 @@ if st.button("Run Evaluation"):
             st.text_area("🔎 Extracted URL text", url_text[:1000], height=100)
             text_blob += "\n" + url_text
 
-    if image_input:
-        st.image(image_input, caption="Uploaded Image", use_column_width=True)
+    if image_file:
+        st.image(image_file, caption="Uploaded Image", use_column_width=True)
         with st.spinner("Extracting text from image..."):
-            img_text = analyze_image(image_input)
+            img_text = analyze_image(image_file)
             st.subheader("📝 Extracted Text")
             st.info(img_text)
             analysis_log["image_text"] = img_text
-            if cross_eval:
-                text_blob += "\n" + img_text
+            text_blob += "\n" + img_text
 
     if text_blob.strip():
         with st.spinner("Scoring text..."):
-            style, style_confidence = detect_style_gpt(text_blob)
-            style_guidance = feedback_style_instruction(style)
-            scores = score_claim(text_blob)
+            result = score_claim(text_blob)
+            st.markdown(result)
+            # Parse scores for chart (simplified parsing, adjust based on actual response format)
+            categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
+            scores = {}
+            for cat in categories:
+                match = re.search(rf"{cat}: (\d+)/10", result)
+                if match:
+                    scores[cat.lower()] = int(match.group(1))
             analysis_log["scores"] = scores
-            analysis_log["style"] = style
 
         if scores:
-            st.subheader("📊 Evaluation Breakdown")
-            categories = ["logic", "natural", "historical", "source", "overall"]
-            scores_data = {k: scores.get(k, 0) for k in categories}
-            df = pd.DataFrame({"Category": [k.capitalize() for k in categories], "Score": [scores.get(k, 0) for k in categories]})
+            df = pd.DataFrame({"Category": categories, "Score": [scores.get(cat.lower(), 0) for cat in categories]})
             fig = px.bar(df, x='Score', y='Category', orientation='h', title='Score Overview', range_x=[0, 10], color='Score', color_continuous_scale='blues')
             fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig, use_container_width=True)
