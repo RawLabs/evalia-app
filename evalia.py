@@ -1,4 +1,4 @@
-# evalia.py (Evalia Dev-Mode: Advanced Features with PDF Export)
+# evalia.py (Evalia Dev-Mode: Fixed Score Parsing)
 
 import openai
 import os
@@ -26,12 +26,10 @@ if not OPENAI_API_KEY:
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 MEMORY_FILE = "evalia_memory.json"
 
-
 def initialize_memory():
     if not os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, 'w') as f:
             json.dump([], f)
-
 
 def save_to_memory(entry):
     with open(MEMORY_FILE, 'r+') as f:
@@ -40,18 +38,15 @@ def save_to_memory(entry):
         f.seek(0)
         json.dump(data, f, indent=2)
 
-
 def sanitize_input(text):
     text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
     text = re.sub(r'[^\w\s\.,!?]', '', text)
     return " ".join(text.strip().split())
 
-
 def bar_chart(score):
     full = round(score)
     empty = 10 - full
     return "[" + "█" * full + "░" * empty + "]"
-
 
 def analyze_image(img_file):
     try:
@@ -73,7 +68,6 @@ def analyze_image(img_file):
         logger.error(f"Image analysis error: {e}")
         return f"Error extracting text: {str(e)}"
 
-
 def fetch_url_text(url):
     try:
         r = requests.get(url, timeout=10)
@@ -82,7 +76,6 @@ def fetch_url_text(url):
         logger.error(f"URL fetch error: {e}")
         return f"Error fetching URL: {str(e)}"
 
-
 SCORING_PROMPT = """
 You are Evalia, an AI reasoning engine. Evaluate the following claim across five axes:
 1. Logic (0-10)
@@ -90,25 +83,27 @@ You are Evalia, an AI reasoning engine. Evaluate the following claim across five
 3. Historical Accuracy (0-10)
 4. Source Credibility (0-10)
 5. Overall Reasonableness (0-10)
-Return results as compact JSON like: {"logic": 7, "natural": 5, ...}
+Return results as compact JSON like: {"logic": 7, "natural": 5, "historical": 6, "source": 4, "overall": 6}
 """
-
 
 def score_claim(text):
     try:
         cleaned = sanitize_input(text)
-        full_prompt = SCORING_PROMPT + f"\n\nClaim: {cleaned}"
+        full_prompt = SCORING_PROMPT + f"\n\nClaim:\n{cleaned}"
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": full_prompt}]
         )
-        raw = response.choices[0].message.content
+        raw = response.choices[0].message.content.strip()
+        logger.info(f"GPT raw response: {raw}")
         match = re.search(r'\{.*\}', raw, re.DOTALL)
-        return json.loads(match.group()) if match else {}
+        if match:
+            return json.loads(match.group())
+        else:
+            return {}
     except Exception as e:
         logger.error(f"Scoring error: {e}")
         return {}
-
 
 def generate_pdf_report(entry):
     pdf = FPDF()
@@ -116,7 +111,6 @@ def generate_pdf_report(entry):
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt="Evalia Claim Analysis Report", ln=True, align='C')
     pdf.ln(10)
-
     pdf.cell(0, 10, f"Timestamp: {entry['timestamp']}", ln=True)
     pdf.multi_cell(0, 10, f"Claim: {entry['claim']}")
     if entry["url"]:
@@ -131,7 +125,6 @@ def generate_pdf_report(entry):
     pdf_file = f"evalia_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     pdf.output(pdf_file)
     return pdf_file
-
 
 initialize_memory()
 st.set_page_config(page_title="Evalia - Claim Evaluator", layout="centered")
