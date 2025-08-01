@@ -14,6 +14,11 @@ import pandas as pd
 import plotly.express as px
 import logging.handlers
 import unicodedata  # For PDF Unicode sanitization
+# New import for video stub (if moviepy not available, use basic requests)
+try:
+    import moviepy.editor as mp  # Assuming available in env; fallback if not
+except ImportError:
+    mp = None
 
 # Configure robust logging
 log_file = "evalia_debug.log"
@@ -65,21 +70,59 @@ def analyze_image(img_file):
     try:
         image_bytes = img_file.read()
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        prompt = "Extract all legible text. Return raw text only."
+        # Updated prompt for deeper analysis: extract text, describe, assess meme/AI/manipulation
+        prompt = """
+        1. Extract all legible text verbatim.
+        2. Provide a concise description of the image content, style, and any visual elements (e.g., colors, subjects).
+        3. Assess if it's a meme (humorous/satirical intent), potential AI generation (e.g., artifacts), or manipulation (e.g., edits).
+        Return in JSON: {"extracted_text": "...", "description": "...", "assessment": "..."}
+        """
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a precise OCR and information extraction assistant."},
+                {"role": "system", "content": "You are a precise image analysis assistant for misinformation detection."},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                 ]}
             ]
         )
-        return sanitize_input(response.choices[0].message.content) or "No text extracted."
+        raw_content = response.choices[0].message.content
+        try:
+            result = json.loads(raw_content)
+            return result
+        except json.JSONDecodeError:
+            return {"extracted_text": sanitize_input(raw_content), "description": "Error parsing description.", "assessment": "Error in assessment."}
     except Exception as e:
         logger.error("Image analysis error for file %s", img_file.name if img_file else "unknown", exc_info=True)
-        return f"Error extracting text: {str(e)}"
+        return {"extracted_text": f"Error extracting text: {str(e)}", "description": "", "assessment": ""}
+
+# New function for video analysis stub
+def analyze_video(video_file):
+    try:
+        if not mp:
+            return "Video analysis requires moviepy; not available. Provide transcript manually."
+        video = mp.VideoFileClip(video_file.name)
+        # Stub: Extract audio transcript if possible (using OpenAI Whisper via API)
+        audio_file = "temp_audio.wav"
+        video.audio.write_audiofile(audio_file)
+        with open(audio_file, "rb") as af:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=af
+            ).text
+        os.remove(audio_file)
+        # Basic frame description: Take a screenshot and analyze as image
+        frame = video.get_frame(0)
+        img = Image.fromarray(frame)
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        frame_analysis = analyze_image(img_byte_arr)  # Reuse image func for first frame
+        return f"Transcript: {sanitize_input(transcript)}\nFrame Analysis: {frame_analysis}"
+    except Exception as e:
+        logger.error("Video analysis error", exc_info=True)
+        return f"Error analyzing video: {str(e)}. Video support is limited; try uploading a transcript."
 
 def fetch_url_text(url):
     try:
@@ -89,10 +132,13 @@ def fetch_url_text(url):
         logger.error("URL fetch error for %s", url, exc_info=True)
         return f"Error fetching URL: {str(e)}"
 
+# Updated SCORING_PROMPT with Claim Summary, enhanced multimedia reference, and specific research guidance
 SCORING_PROMPT = """
-You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified. Use actual newlines to separate paragraphs for readability:
+You are Evalia, an AI reasoning engine specializing in misinformation detection. Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified. Use actual newlines to separate paragraphs for readability:
 
 - 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
+
+- 🔑 Claim Summary: A concise 1-2 sentence summary of the core claim(s) being made, including any multimedia elements (e.g., image descriptions or video transcripts if provided).
 
 - 📊 Bar-style Score Overview (use exactly: "Category: ███░░░░░░░ 3/10" format for each, no extra text or styling):
   - Logic: ███░░░░░░░ 3/10
@@ -105,18 +151,18 @@ You are Evalia, an AI reasoning engine. Evaluate the following claim and provide
 
 - 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)
 
-- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood)
+- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood, especially for images/memes)
 
 - 📝 Detected Style: e.g., Symbolic/metaphysical (with confidence 0.0-1.0)
 
 - 🧪 Reasoning per category: Brief explanation for each
   Separate each category's explanation with a newline
 
-- 📚 Relevant Sources & Background: 1-2 reputable sources
+- 📚 Relevant Sources & Background: 1-2 reputable sources (e.g., from fact-check.org or reuters.com)
 
-- 📌 Suggested Further Research: Guidance on next steps
+- 📌 Suggested Further Research: Specific, accessible steps (e.g., 'Search Google with "site:snopes.com [key claim]" or check primary sources like official reports. Use tools like Google Fact Check Explorer for images.')
 
-- 🧽 Final Commentary: Human-like, persuasive, encouraging self-verification
+- 🧽 Final Commentary: Human-like, persuasive, encouraging self-verification (e.g., 'Dig deeper with these tips to form your own view—AI is a starting point, not the end.')
 
 - 📾 Confidence Level: Percentage with rationale
 
@@ -145,7 +191,7 @@ def score_claim(text):
         return "Error: Unable to score claim due to an issue."
 
 def sanitize_for_pdf(text):
-    # Replace Unicode superscripts/subscripts with ASCII equivalents
+    # Improved sanitization: Handle more Unicode cases
     superscript_map = {
         '⁰': '^0', '¹': '^1', '²': '^2', '³': '^3', '⁴': '^4', '⁵': '^5', '⁶': '^6', '⁷': '^7', '⁸': '^8', '⁹': '^9',
         '⁻': '^-'
@@ -155,9 +201,8 @@ def sanitize_for_pdf(text):
     }
     text = ''.join(superscript_map.get(c, c) for c in text)
     text = ''.join(subscript_map.get(c, c) for c in text)
-    # Remove or replace other non-latin1 characters
-    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
-    return text
+    text = unicodedata.normalize('NFKD', text).encode('latin1', 'replace').decode('latin1')
+    return text.replace('?', '')  # Remove leftover ? from encoding
 
 def generate_pdf_report(entry):
     try:
@@ -171,8 +216,10 @@ def generate_pdf_report(entry):
         pdf.multi_cell(0, 10, f"Claim: {sanitized_claim}")
         if entry["url"]:
             pdf.multi_cell(0, 10, f"URL: {entry['url']}")
-        if entry["image_text"]:
-            pdf.multi_cell(0, 10, f"Extracted Image Text: {entry['image_text']}")
+        if entry["image_analysis"]:
+            pdf.multi_cell(0, 10, f"Image Analysis: {sanitize_for_pdf(str(entry['image_analysis']))}")
+        if entry["video_analysis"]:
+            pdf.multi_cell(0, 10, f"Video Analysis: {sanitize_for_pdf(entry['video_analysis'])}")
         pdf.ln(5)
         pdf.cell(0, 10, "Scores:", ln=True)
         for k, v in entry["scores"].items():
@@ -194,7 +241,7 @@ def generate_pdf_report(entry):
 initialize_memory()
 st.set_page_config(page_title="Evalia - Claim Evaluator", layout="wide")
 
-# Load background image
+# Load background image (unchanged)
 background_image = None
 try:
     image_path = "raw-cast-enterprises-backdrop.png"
@@ -273,8 +320,8 @@ with col1:
     url_input = st.text_input("Enter source URL (optional):", placeholder="Insert URL here")
 with col2:
     image_file = st.file_uploader("Upload an image or meme (optional)", type=["png", "jpg", "jpeg"])
-    st.file_uploader("Upload a video (optional)", type=["mp4", "mov", "mpeg4"])
-    st.markdown('<div class="video-coming-soon">Video analysis coming soon!</div>', unsafe_allow_html=True)
+    video_file = st.file_uploader("Upload a video (optional)", type=["mp4", "mov", "mpeg4"])
+    st.markdown('<div class="video-coming-soon">Video analysis is basic (transcript + frame); full coming soon!</div>', unsafe_allow_html=True)
 
 download_ready = False
 pdf_generated = None
@@ -284,7 +331,8 @@ if st.button("Run Evaluation"):
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "claim": claim_input,
         "url": url_input,
-        "image_text": None,
+        "image_analysis": None,
+        "video_analysis": None,
         "scores": {}
     }
 
@@ -293,19 +341,27 @@ if st.button("Run Evaluation"):
         with st.spinner("Fetching URL..."):
             url_text = fetch_url_text(url_input)
             st.text_area("🔎 Extracted URL text", url_text[:1000], height=100)
-            text_blob += "\n" + url_text
+            text_blob += "\n[URL Content]: " + url_text
 
     if image_file:
-        st.image(image_file, caption="Uploaded Image", use_container_width=True)  # Updated to use_container_width
-        with st.spinner("Extracting text from image..."):
-            img_text = analyze_image(image_file)
-            st.subheader("📝 Extracted Text")
-            st.info(img_text)
-            analysis_log["image_text"] = img_text
-            text_blob += "\n" + img_text
+        st.image(image_file, caption="Uploaded Image", use_container_width=True)
+        with st.spinner("Analyzing image..."):
+            img_analysis = analyze_image(image_file)
+            st.subheader("📝 Image Analysis")
+            st.info(f"Extracted Text: {img_analysis['extracted_text']}\nDescription: {img_analysis['description']}\nAssessment: {img_analysis['assessment']}")
+            analysis_log["image_analysis"] = img_analysis
+            text_blob += f"\n[Image Extracted Text]: {img_analysis['extracted_text']}\n[Image Description]: {img_analysis['description']}\n[Image Assessment]: {img_analysis['assessment']}"
+
+    if video_file:
+        with st.spinner("Analyzing video..."):
+            video_analysis = analyze_video(video_file)
+            st.subheader("🎥 Video Analysis")
+            st.info(video_analysis)
+            analysis_log["video_analysis"] = video_analysis
+            text_blob += "\n[Video Analysis]: " + video_analysis
 
     if text_blob.strip():
-        with st.spinner("Scoring text..."):
+        with st.spinner("Scoring claim..."):
             result = score_claim(text_blob)
             categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
             scores = {}
@@ -330,7 +386,7 @@ if st.button("Run Evaluation"):
             # Then display text
             st.markdown(f'<div class="output-box">{result}</div>', unsafe_allow_html=True)
 
-    if analysis_log["scores"] or analysis_log["image_text"]:
+    if analysis_log["scores"] or analysis_log.get("image_analysis") or analysis_log.get("video_analysis"):
         save_to_memory(analysis_log)
         st.success("✅ Analysis saved to memory.")
         pdf_generated = generate_pdf_report(analysis_log)
