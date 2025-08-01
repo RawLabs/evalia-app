@@ -420,7 +420,8 @@ if st.button("Run Evaluation"):
                 st.plotly_chart(fig, use_container_width=True)
 
                 # Display text
-                st.markdown(f'<div class="output-box">{result}</div>', unsafe_allow_html=True)
+                st.markdown(result)
+
         else:
             st.warning("No valid text to score. Please provide a claim or ensure media contains extractable text.")
 
