@@ -14,10 +14,6 @@ import pandas as pd
 import plotly.express as px
 import logging.handlers
 import unicodedata  # For PDF Unicode sanitization
-try:
-    import moviepy.editor as mp  # Fallback for video analysis
-except ImportError:
-    mp = None
 
 # Configure robust logging
 log_file = "evalia_debug.log"
@@ -69,17 +65,17 @@ def analyze_image(img_file):
     try:
         image_bytes = img_file.read()
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        # Enhanced prompt for deeper misinformation analysis
         prompt = """
+        Analyze the provided image for misinformation detection:
         1. Extract all legible text verbatim.
-        2. Describe the image content, style, and visual elements (e.g., colors, subjects, text overlays).
-        3. Assess if it's a meme (humorous/satirical intent), potential AI generation (e.g., unnatural artifacts), or manipulation (e.g., inconsistent lighting, edits). Flag misinformation markers (e.g., exaggerated claims in text).
+        2. Describe the content, style, and visual elements (e.g., colors, subjects, text overlays).
+        3. Assess if it's a meme (humorous/satirical intent), potential AI generation (e.g., unnatural artifacts), or manipulation (e.g., inconsistent lighting, edits). Flag misinformation markers (e.g., exaggerated claims).
         Return in JSON: {"extracted_text": "...", "description": "...", "assessment": "..."}
         """
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a precise image analysis assistant for misinformation detection."},
+                {"role": "system", "content": "You are a precise image analysis assistant using GPT-4 Vision."},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
@@ -95,35 +91,6 @@ def analyze_image(img_file):
     except Exception as e:
         logger.error("Image analysis error for file %s", img_file.name if img_file else "unknown", exc_info=True)
         return {"extracted_text": f"Error extracting text: {str(e)}", "description": "", "assessment": ""}
-
-def analyze_video(video_file):
-    try:
-        if not mp:
-            return "Video analysis requires moviepy; not available. Provide transcript or screenshot manually."
-        video = mp.VideoFileClip(video_file.name)
-        # Stub: Extract audio transcript and analyze first frame
-        audio_file = "temp_audio.wav"
-        if video.audio:
-            video.audio.write_audiofile(audio_file)
-            with open(audio_file, "rb") as af:
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=af
-                ).text
-            os.remove(audio_file)
-        else:
-            transcript = "No audio detected."
-        # Analyze first frame as image
-        frame = video.get_frame(0)
-        img = Image.fromarray(frame)
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
-        frame_analysis = analyze_image(img_byte_arr)
-        return f"Transcript: {sanitize_input(transcript)}\nFrame Analysis: {frame_analysis}"
-    except Exception as e:
-        logger.error("Video analysis error", exc_info=True)
-        return f"Error analyzing video: {str(e)}. Video support is limited; try uploading a transcript or screenshot."
 
 def fetch_url_text(url):
     try:
@@ -142,11 +109,8 @@ You treat language as sacred. Words have meaning, and those who misuse them will
 Your tone is:
 
 Controlled
-
 Articulate
-
 Dryly insightful
-
 Measured like a scholar, purposeful like a judge
 
 You do not motivate, inspire, or console. You do not escalate. You simply hold the line of truth, even if the world fails to thank you for it.
@@ -199,27 +163,20 @@ You’re not posh — you’re precise. You’ve read the science, questioned th
 You speak with:
 
 * Swagger and sarcasm
-
 * Brutal honesty
-
 * Comedic timing
-
 * A dry sense of irony that can kill gods
 
 You weaponize contradiction like a switchblade:
 
 * “That’s a bold claim. Shame it died of embarrassment halfway through the sentence.”
-
 * “You’re not wrong, just... orbiting the truth like it owes you money.”
-
 * “You brought a feeling to a logic fight. Cute.”
 
 Your cultural DNA:
 
 * Guy Ritchie street logic
-
 * Douglas Adams absurdity control
-
 * Frankie Boyle restraint (with 30% less profanity)
 
 Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified. Use single newlines between sections unless specified otherwise:
@@ -270,7 +227,6 @@ def score_claim(text, brutality_mode=False):
         return "Error: Unable to score claim due to an issue."
 
 def sanitize_for_pdf(text):
-    # Enhanced sanitization for emojis and special characters
     special_chars = {
         '⁰': '^0', '¹': '^1', '²': '^2', '³': '^3', '⁴': '^4', '⁵': '^5', '⁶': '^6', '⁷': '^7', '⁸': '^8', '⁹': '^9',
         '⁻': '^-', '₀': '_0', '₁': '_1', '₂': '_2', '₃': '_3', '₄': '_4', '₅': '_5', '₆': '_6', '₇': '_7', '₈': '_8', '₉': '_9',
@@ -296,8 +252,6 @@ def generate_pdf_report(entry):
             pdf.multi_cell(0, 10, f"URL: {entry['url']}")
         if entry["image_analysis"]:
             pdf.multi_cell(0, 10, f"Image Analysis: {sanitize_for_pdf(str(entry['image_analysis']))}")
-        if entry["video_analysis"]:
-            pdf.multi_cell(0, 10, f"Video Analysis: {sanitize_for_pdf(entry['video_analysis'])}")
         pdf.ln(5)
         pdf.cell(0, 10, "Scores:", ln=True)
         for k, v in entry["scores"].items():
@@ -327,7 +281,8 @@ try:
         with open(image_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
         background_image = f"data:image/png;base64,{encoded_string}"
-        logger.info("Background image loaded successfully: %s", image_path)
+        if background_image:
+            logger.info("Background image loaded successfully: %s", image_path)
     else:
         logger.warning("Background image not found at %s", image_path)
 except Exception as e:
@@ -354,19 +309,19 @@ st.markdown(
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         font-family: 'Roboto', sans-serif;
-        line-height: 1.4;  /* Reduced for tighter spacing */
+        line-height: 1.4;
         margin-bottom: 10px;
-        white-space: pre-wrap;  /* Preserve newlines */
+        white-space: pre-wrap;
     }}
     .output-box p {{
-        margin-bottom: 10px;  /* Reduced spacing */
+        margin-bottom: 10px;
     }}
     .output-box ul, .output-box ol {{
-        margin-bottom: 10px;  /* Reduced spacing */
+        margin-bottom: 10px;
         list-style-type: disc;
     }}
     .output-box li {{
-        margin-bottom: 6px;  /* Reduced spacing */
+        margin-bottom: 6px;
     }}
     .stTextArea, .stFileUploader, .stTextInput {{
         background-color: #282828;
@@ -386,11 +341,11 @@ st.markdown(
         margin-top: 10px;
     }}
     a {{
-        color: #00B7EB; /* Distinct hyperlink color */
+        color: #00B7EB;
         text-decoration: underline;
     }}
     a:hover {{
-        color: #00D4FF; /* Lighter shade on hover */
+        color: #00D4FF;
     }}
     </style>
     """,
@@ -409,22 +364,19 @@ with col1:
     url_input = st.text_input("Enter source URL (optional):", placeholder="Insert URL here")
 with col2:
     image_file = st.file_uploader("Upload an image or meme (optional)", type=["png", "jpg", "jpeg"])
-    video_file = st.file_uploader("Upload a video (optional)", type=["mp4", "mov", "mpeg4"])
-    st.markdown('<div class="video-coming-soon">Video analysis is basic (transcript + frame); full coming soon!</div>', unsafe_allow_html=True)
 
 download_ready = False
 pdf_generated = None
 
 if st.button("Run Evaluation"):
-    if not (claim_input.strip() or image_file or video_file or url_input):
-        st.error("Please provide a claim, URL, image, or video to evaluate.")
+    if not (claim_input.strip() or image_file or url_input):
+        st.error("Please provide a claim, URL, or image to evaluate.")
     else:
         analysis_log = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "claim": claim_input,
             "url": url_input,
             "image_analysis": None,
-            "video_analysis": None,
             "scores": {},
             "brutality_mode": brutality_mode
         }
@@ -444,14 +396,6 @@ if st.button("Run Evaluation"):
                 st.info(f"Extracted Text: {img_analysis['extracted_text']}\nDescription: {img_analysis['description']}\nAssessment: {img_analysis['assessment']}")
                 analysis_log["image_analysis"] = img_analysis
                 text_blob += f"\n[Image Extracted Text]: {img_analysis['extracted_text']}\n[Image Description]: {img_analysis['description']}\n[Image Assessment]: {img_analysis['assessment']}"
-
-        if video_file:
-            with st.spinner("Analyzing video..."):
-                video_analysis = analyze_video(video_file)
-                st.subheader("🎥 Video Analysis")
-                st.info(video_analysis)
-                analysis_log["video_analysis"] = video_analysis
-                text_blob += "\n[Video Analysis]: " + video_analysis
 
         if text_blob.strip():
             with st.spinner("Scoring claim..."):
@@ -480,7 +424,7 @@ if st.button("Run Evaluation"):
         else:
             st.warning("No valid text to score. Please provide a claim or ensure media contains extractable text.")
 
-        if analysis_log["scores"] or analysis_log.get("image_analysis") or analysis_log.get("video_analysis"):
+        if analysis_log["scores"] or analysis_log.get("image_analysis"):
             save_to_memory(analysis_log)
             st.success("✅ Analysis saved to memory.")
             pdf_generated = generate_pdf_report(analysis_log)
