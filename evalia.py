@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from PIL import Image
 import streamlit as st
 import requests
-from fpdf import FPDF
+from fpdf2 import FPDF
 import pandas as pd
 import plotly.express as px
 import logging.handlers
