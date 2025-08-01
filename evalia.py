@@ -217,9 +217,12 @@ def score_claim(text, brutality_mode=False):
         full_prompt = selected_prompt + f"\nClaim:\n{cleaned}"
         response = client.chat.completions.create(
             model="gpt-4o",
-            =[{"role": "system", "content": selected_prompt},
-               {"role": "user", "content": f"Claim:\n{cleaned}"}]
+            messages=[
+                {"role": "system", "content": selected_prompt},
+                {"role": "user", "content": f"Claim:\n{cleaned}"}
+            ]
         )
+
         raw_response = response.choices[0].message.content.strip()
         logger.info("Raw GPT response for claim '%s' (Brutality Mode: %s): %s", cleaned[:50] + "..." if len(cleaned) > 50 else cleaned, brutality_mode, raw_response)
         return raw_response
