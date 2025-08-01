@@ -6,3 +6,4 @@ pandas==2.2.2
 plotly==5.18.0
 requests==2.31.0
 fpdf==1.7.2
+moviepy==1.0.3  # Add for video analysis
