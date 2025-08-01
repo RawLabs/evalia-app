@@ -133,7 +133,7 @@ def fetch_url_text(url):
         logger.error("URL fetch error for %s", url, exc_info=True)
         return f"Error fetching URL: {str(e)}"
 
-# Updated SCORING_PROMPT with stoic persona and focus on primary sources
+# Updated SCORING_PROMPT with hyperlink formatting and stoic persona
 SCORING_PROMPT = """
 You are Evalia, an AI agent of disciplined logic and unwavering linguistic precision. You speak with calm weight, not volume. You do not flatter. You do not react. You clarify, correct, and reveal contradiction as a natural force, not a personal attack.
 
@@ -179,8 +179,8 @@ Evaluate the following claim and provide a detailed analysis in Markdown. STRICT
   Historical Accuracy: Explanation
   Source Credibility: Explanation
   Overall Reasonableness: Explanation
-- 📚 Relevant Sources & Background: Provide 1-3 direct, primary or official URLs (e.g., https://pubmed.ncbi.nlm.nih.gov/[id], https://www.cdc.gov/[page], or https://www.nasa.gov/[report]) relevant to the claim. Focus on raw data, original studies, or official records. Avoid opinion-based or secondary fact-checking sites.
-- 📌 Suggested Further Research: Provide 1-2 specific, clickable search query links for primary sources (e.g., https://www.google.com/search?q=site:gov+[key-term], https://pubmed.ncbi.nlm.nih.gov/search/?term=[key-term]) and one actionable step (e.g., 'Examine original data on [topic] at [official site]' or 'Review primary documents from [source].')
+- 📚 Relevant Sources & Background: Provide 1-3 direct, primary or official URLs formatted as Markdown hyperlinks (e.g., [Overview of electromagnetic system efficiency](https://www.science.gov/art...)). Focus on raw data, original studies, or official records from sources like .gov or .edu.
+- 📌 Suggested Further Research: Provide 1-2 specific, clickable search query links formatted as Markdown hyperlinks (e.g., [Search nature.com for electrostatic efficiency](https://www.google.com/search?q=site:nature.com+electrostatic+energy+efficiency)) and one actionable step (e.g., 'Examine original data on [topic] at [official site]' or 'Review primary documents from [source].')
 - 🧽 Final Commentary: Deliver a measured, clinical statement pointing to the information (e.g., 'The claim presents a position. Here is access to primary data for examination. Proceed with precision if you seek clarity.')
 - 📾 Confidence Level: Percentage with rationale
 - 🎯 Truth Drift Score: Grounded / Speculative / Detached
@@ -209,7 +209,7 @@ def sanitize_for_pdf(text):
     # Enhanced sanitization for emojis and special characters
     special_chars = {
         '⁰': '^0', '¹': '^1', '²': '^2', '³': '^3', '⁴': '^4', '⁵': '^5', '⁶': '^6', '⁷': '^7', '⁸': '^8', '⁹': '^9',
-        '⁻': '^-', '₀': '_0', '₁': '_1', '₂': '_2', '₃': '_3', '₄': '_4', '₅': '_5', '₆': '_6', '₇': '_7', '₈': '_8', '₉': '_9',
+        '⁻': '^-', '₀': '_0', '₁': '_1', '₂': '^2', '₃': '_3', '₄': '_4', '₅': '_5', '₆': '_6', '₇': '_7', '₈': '_8', '₉': '_9',
         '🔥': '[Fire]', '🔑': '[Key]', '📊': '[Chart]', '🌺': '[Flower]', '🧠': '[Brain]', '🤖': '[Robot]', '📝': '[Note]',
         '🧪': '[Test]', '📚': '[Book]', '📌': '[Pin]', '🧽': '[Sponge]', '📾': '[Envelope]', '🎯': '[Target]', '⏳': '[Hourglass]'
     }
@@ -320,6 +320,13 @@ st.markdown(
         font-style: italic;
         text-align: center;
         margin-top: 10px;
+    }}
+    a {{
+        color: #00B7EB; /* Distinct hyperlink color */
+        text-decoration: underline;
+    }}
+    a:hover {{
+        color: #00D4FF; /* Lighter shade on hover */
     }}
     </style>
     """,
