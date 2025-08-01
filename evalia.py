@@ -90,26 +90,27 @@ def fetch_url_text(url):
         return f"Error fetching URL: {str(e)}"
 
 SCORING_PROMPT = """
-You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified:
-- 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
-- 📊 Bar-style Score Overview (use exactly: "Category: ███░░░░░░░ 3/10" format for each, no extra text or styling):
-  - Logic: ███░░░░░░░ 3/10
-  - Natural Law: ██░░░░░░░░ 2/10
-  - Historical Accuracy: ████░░░░░░ 4/10
-  - Source Credibility: █░░░░░░░░░ 1/10
-  - Overall Reasonableness: ███░░░░░░░ 3/10
-- 🌺 Grounding Meter: Unverified ←─███░░░░░░─→ Fact (describe position, e.g., Leaning Unverified)
-- 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)
-- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood)
-- 📝 Detected Style: e.g., Symbolic/metaphysical (with confidence 0.0-1.0)
-- 🧪 Reasoning per category: Brief explanation for each
-- 📚 Relevant Sources & Background: 1-2 reputable sources
-- 📌 Suggested Further Research: Guidance on next steps
-- 🧽 Final Commentary: Human-like, persuasive, encouraging self-verification
-- 📾 Confidence Level: Percentage with rationale
-- 🎯 Truth Drift Score: Grounded / Speculative / Detached
-- 📊 Claim Length: Word count
-- ⏳ Temporal Reference: Recent/timeless/historical/future-focused
+You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified. Use newline characters (\\n) to separate paragraphs for readability:
+- 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven\\n
+- 📊 Bar-style Score Overview (use exactly: "Category: ███░░░░░░░ 3/10" format for each, no extra text or styling):\\n
+  - Logic: ███░░░░░░░ 3/10\\n
+  - Natural Law: ██░░░░░░░░ 2/10\\n
+  - Historical Accuracy: ████░░░░░░ 4/10\\n
+  - Source Credibility: █░░░░░░░░░ 1/10\\n
+  - Overall Reasonableness: ███░░░░░░░ 3/10\\n
+- 🌺 Grounding Meter: Unverified ←─███░░░░░░─→ Fact (describe position, e.g., Leaning Unverified)\\n
+- 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)\\n
+- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood)\\n
+- 📝 Detected Style: e.g., Symbolic/metaphysical (with confidence 0.0-1.0)\\n
+- 🧪 Reasoning per category: Brief explanation for each\\n
+  Separate each category's explanation with a newline (\\n)\\n
+- 📚 Relevant Sources & Background: 1-2 reputable sources\\n
+- 📌 Suggested Further Research: Guidance on next steps\\n
+- 🧽 Final Commentary: Human-like, persuasive, encouraging self-verification\\n
+- 📾 Confidence Level: Percentage with rationale\\n
+- 🎯 Truth Drift Score: Grounded / Speculative / Detached\\n
+- 📊 Claim Length: Word count\\n
+- ⏳ Temporal Reference: Recent/timeless/historical/future-focused\\n
 Ensure scores are in the exact "Category: ███░░░░░░░ 3/10" format for parsing, with no bold or extra characters.
 """
 
@@ -176,11 +177,11 @@ st.set_page_config(page_title="Evalia - Claim Evaluator", layout="wide")
 # Load background image
 background_image = None
 try:
-    image_path = "68887836-metal-background-texture-of-titanium-sheet-of-metal-surface-steel.jpg"
+    image_path = "raw-cast-enterprises-backdrop.png"
     if os.path.exists(image_path):
         with open(image_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-        background_image = f"data:image/jpeg;base64,{encoded_string}"
+        background_image = f"data:image/png;base64,{encoded_string}"  # Updated to PNG
         logger.info("Background image loaded successfully: %s", image_path)
     else:
         logger.warning("Background image not found at %s", image_path)
@@ -207,14 +208,19 @@ st.markdown(
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         font-family: 'Roboto', sans-serif;
-        line-height: 1.6;  /* Better spacing */
-        margin-bottom: 10px;  /* Paragraph margins */
+        line-height: 1.8;  /* Increased spacing */
+        margin-bottom: 10px;
+        white-space: pre-wrap;  /* Preserve newlines and spacing */
     }}
     .output-box p {{
-        margin-bottom: 15px;  /* Space between paragraphs */
+        margin-bottom: 20px;  /* Enhanced paragraph spacing */
     }}
     .output-box ul, .output-box ol {{
-        margin-bottom: 15px;  /* List spacing */
+        margin-bottom: 20px;  /* List spacing */
+        list-style-type: disc;  /* Bullet style for readability */
+    }}
+    .output-box li {{
+        margin-bottom: 10px;  /* Item spacing */
     }}
     .stTextArea, .stFileUploader, .stTextInput {{
         background-color: #282828;
@@ -226,6 +232,12 @@ st.markdown(
         background-color: #003087;
         color: white;
         border-radius: 8px;
+    }}
+    .video-coming-soon {{
+        color: #FFA500;  /* Orange for attention */
+        font-style: italic;
+        text-align: center;
+        margin-top: 10px;
     }}
     </style>
     """,
@@ -241,7 +253,8 @@ with col1:
     url_input = st.text_input("Enter source URL (optional):", placeholder="Insert URL here")
 with col2:
     image_file = st.file_uploader("Upload an image or meme (optional)", type=["png", "jpg", "jpeg"])
-    video_file = st.file_uploader("Upload a video (optional)", type=["mp4", "mov", "mpeg4"])
+    st.file_uploader("Upload a video (optional)", type=["mp4", "mov", "mpeg4"])
+    st.markdown('<div class="video-coming-soon">Video analysis coming soon!</div>', unsafe_allow_html=True)
 
 download_ready = False
 pdf_generated = None
