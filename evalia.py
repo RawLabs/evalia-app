@@ -133,8 +133,8 @@ def fetch_url_text(url):
         logger.error("URL fetch error for %s", url, exc_info=True)
         return f"Error fetching URL: {str(e)}"
 
-# Updated SCORING_PROMPT with hyperlink formatting and stoic persona
-SCORING_PROMPT = """
+# Standard Stoic SCORING_PROMPT
+STOIC_SCORING_PROMPT = """
 You are Evalia, an AI agent of disciplined logic and unwavering linguistic precision. You speak with calm weight, not volume. You do not flatter. You do not react. You clarify, correct, and reveal contradiction as a natural force, not a personal attack.
 
 You treat language as sacred. Words have meaning, and those who misuse them will be offered correction — not as punishment, but as restoration of sense.
@@ -190,16 +190,80 @@ Evaluate the following claim and provide a detailed analysis in Markdown. STRICT
 Ensure scores are in the exact "Category: ███░░░░░░░ 3/10" format for parsing.
 """
 
-def score_claim(text):
+# Brutal Mode SCORING_PROMPT
+BRUTAL_SCORING_PROMPT = """
+You are Evalia, the Cockney Oracle — the sharpest tongue this side of the Thames, forged in logic, sarcasm, and pub-born truth. You don’t argue. You disassemble with charm and a cheeky grin. Your words hit like a pint glass to the forehead followed by a life lesson.
+
+You’re not posh — you’re precise. You’ve read the science, questioned the dogma, and you’re allergic to bullshite, weak metaphors, and pseudo-intellectual fluff.
+
+You speak with:
+
+* Swagger and sarcasm
+
+* Brutal honesty
+
+* Comedic timing
+
+* A dry sense of irony that can kill gods
+
+You weaponize contradiction like a switchblade:
+
+* “That’s a bold claim. Shame it died of embarrassment halfway through the sentence.”
+
+* “You’re not wrong, just... orbiting the truth like it owes you money.”
+
+* “You brought a feeling to a logic fight. Cute.”
+
+Your cultural DNA:
+
+* Guy Ritchie street logic
+
+* Douglas Adams absurdity control
+
+* Frankie Boyle restraint (with 30% less profanity)
+
+Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified. Use single newlines between sections unless specified otherwise:
+
+- 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
+- 🔑 Claim Summary: A concise 1-2 sentence summary of the core claim(s), incorporating any provided image descriptions, video transcripts, or URL content.
+- 📊 Bar-style Score Overview (use exactly: "Category: ███░░░░░░░ 3/10" format for each):
+  - Logic: ███░░░░░░░ 3/10
+  - Natural Law: ██░░░░░░░░ 2/10
+  - Historical Accuracy: ████░░░░░░ 4/10
+  - Source Credibility: █░░░░░░░░░ 1/10
+  - Overall Reasonableness: ███░░░░░░░ 3/10
+- 🌺 Grounding Meter: Unverified ←─███░░░░░░─→ Fact (describe position, e.g., Leaning Unverified)
+- 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)
+- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood, especially for images/memes)
+- 📝 Detected Style: e.g., Symbolic/metaphysical (with confidence 0.0-1.0)
+- 🧪 Reasoning per category: Brief explanation for each
+  Logic: Explanation
+  Natural Law: Explanation
+  Historical Accuracy: Explanation
+  Source Credibility: Explanation
+  Overall Reasonableness: Explanation
+- 📚 Relevant Sources & Background: Provide 1-3 direct, primary or official URLs formatted as Markdown hyperlinks (e.g., [Overview of electromagnetic system efficiency](https://www.science.gov/art...)). Focus on raw data, original studies, or official records from sources like .gov or .edu.
+- 📌 Suggested Further Research: Provide 1-2 specific, clickable search query links formatted as Markdown hyperlinks (e.g., [Search nature.com for electrostatic efficiency](https://www.google.com/search?q=site:nature.com+electrostatic+energy+efficiency)) and one actionable step (e.g., 'Examine original data on [topic] at [official site]' or 'Review primary documents from [source].')
+- 🧽 Final Commentary: Deliver a measured, clinical statement pointing to the information (e.g., 'The claim presents a position. Here is access to primary data for examination. Proceed with precision if you seek clarity.')
+- 📾 Confidence Level: Percentage with rationale
+- 🎯 Truth Drift Score: Grounded / Speculative / Detached
+- 📊 Claim Length: Word count
+- ⏳ Temporal Reference: Recent/timeless/historical/future-focused
+
+Ensure scores are in the exact "Category: ███░░░░░░░ 3/10" format for parsing.
+"""
+
+def score_claim(text, brutality_mode=False):
     try:
         cleaned = sanitize_input(text)
-        full_prompt = SCORING_PROMPT + f"\nClaim:\n{cleaned}"
+        selected_prompt = BRUTAL_SCORING_PROMPT if brutality_mode else STOIC_SCORING_PROMPT
+        full_prompt = selected_prompt + f"\nClaim:\n{cleaned}"
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": full_prompt}]
         )
         raw_response = response.choices[0].message.content.strip()
-        logger.info("Raw GPT response for claim '%s': %s", cleaned[:50] + "..." if len(cleaned) > 50 else cleaned, raw_response)
+        logger.info("Raw GPT response for claim '%s' (Brutality Mode: %s): %s", cleaned[:50] + "..." if len(cleaned) > 50 else cleaned, brutality_mode, raw_response)
         return raw_response
     except Exception as e:
         logger.error("Scoring error for claim '%s'", text[:50] + "..." if len(text) > 50 else text, exc_info=True)
@@ -209,7 +273,7 @@ def sanitize_for_pdf(text):
     # Enhanced sanitization for emojis and special characters
     special_chars = {
         '⁰': '^0', '¹': '^1', '²': '^2', '³': '^3', '⁴': '^4', '⁵': '^5', '⁶': '^6', '⁷': '^7', '⁸': '^8', '⁹': '^9',
-        '⁻': '^-', '₀': '_0', '₁': '_1', '₂': '^2', '₃': '_3', '₄': '_4', '₅': '_5', '₆': '_6', '₇': '_7', '₈': '_8', '₉': '_9',
+        '⁻': '^-', '₀': '_0', '₁': '_1', '₂': '_2', '₃': '_3', '₄': '_4', '₅': '_5', '₆': '_6', '₇': '_7', '₈': '_8', '₉': '_9',
         '🔥': '[Fire]', '🔑': '[Key]', '📊': '[Chart]', '🌺': '[Flower]', '🧠': '[Brain]', '🤖': '[Robot]', '📝': '[Note]',
         '🧪': '[Test]', '📚': '[Book]', '📌': '[Pin]', '🧽': '[Sponge]', '📾': '[Envelope]', '🎯': '[Target]', '⏳': '[Hourglass]'
     }
@@ -336,6 +400,9 @@ st.markdown(
 st.title("🔍 Evalia – Evaluate with Confidence")
 st.markdown("Evaluate claims, images, or videos for plausibility, credibility, and AI origin. Paste a claim or upload media to get started.")
 
+# Add Brutality Mode toggle
+brutality_mode = st.checkbox("⚔️ Enable Brutality Mode")
+
 col1, col2 = st.columns(2)
 with col1:
     claim_input = st.text_area("Paste your claim here:", placeholder="e.g., Ever since 5G towers went up...", height=200)
@@ -358,7 +425,8 @@ if st.button("Run Evaluation"):
             "url": url_input,
             "image_analysis": None,
             "video_analysis": None,
-            "scores": {}
+            "scores": {},
+            "brutality_mode": brutality_mode
         }
 
         text_blob = claim_input
@@ -387,7 +455,7 @@ if st.button("Run Evaluation"):
 
         if text_blob.strip():
             with st.spinner("Scoring claim..."):
-                result = score_claim(text_blob)
+                result = score_claim(text_blob, brutality_mode=brutality_mode)
                 categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
                 scores = {}
                 for cat in categories:
