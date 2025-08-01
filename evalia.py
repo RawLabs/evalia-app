@@ -90,27 +90,42 @@ def fetch_url_text(url):
         return f"Error fetching URL: {str(e)}"
 
 SCORING_PROMPT = """
-You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified. Use newline characters (\\n) to separate paragraphs for readability:
-- 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven\\n
-- 📊 Bar-style Score Overview (use exactly: "Category: ███░░░░░░░ 3/10" format for each, no extra text or styling):\\n
-  - Logic: ███░░░░░░░ 3/10\\n
-  - Natural Law: ██░░░░░░░░ 2/10\\n
-  - Historical Accuracy: ████░░░░░░ 4/10\\n
-  - Source Credibility: █░░░░░░░░░ 1/10\\n
-  - Overall Reasonableness: ███░░░░░░░ 3/10\\n
-- 🌺 Grounding Meter: Unverified ←─███░░░░░░─→ Fact (describe position, e.g., Leaning Unverified)\\n
-- 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)\\n
-- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood)\\n
-- 📝 Detected Style: e.g., Symbolic/metaphysical (with confidence 0.0-1.0)\\n
-- 🧪 Reasoning per category: Brief explanation for each\\n
-  Separate each category's explanation with a newline (\\n)\\n
-- 📚 Relevant Sources & Background: 1-2 reputable sources\\n
-- 📌 Suggested Further Research: Guidance on next steps\\n
-- 🧽 Final Commentary: Human-like, persuasive, encouraging self-verification\\n
-- 📾 Confidence Level: Percentage with rationale\\n
-- 🎯 Truth Drift Score: Grounded / Speculative / Detached\\n
-- 📊 Claim Length: Word count\\n
-- ⏳ Temporal Reference: Recent/timeless/historical/future-focused\\n
+You are Evalia, an AI reasoning engine. Evaluate the following claim and provide a detailed analysis in Markdown. STRICTLY follow this format without additional markdown (e.g., no bold or italics) unless specified. Use actual newlines to separate paragraphs for readability:
+
+- 🔥 Verdict: Plausible / Implausible / Speculative / Unknown / Proven
+
+- 📊 Bar-style Score Overview (use exactly: "Category: ███░░░░░░░ 3/10" format for each, no extra text or styling):
+  - Logic: ███░░░░░░░ 3/10
+  - Natural Law: ██░░░░░░░░ 2/10
+  - Historical Accuracy: ████░░░░░░ 4/10
+  - Source Credibility: █░░░░░░░░░ 1/10
+  - Overall Reasonableness: ███░░░░░░░ 3/10
+
+- 🌺 Grounding Meter: Unverified ←─███░░░░░░─→ Fact (describe position, e.g., Leaning Unverified)
+
+- 🧠 Emotion Meter: Neutral ←─████░░░░░░─→ Charged (describe intensity)
+
+- 🤖 AI Origin: Human ←─█████░░░░─→ AI (assess likelihood)
+
+- 📝 Detected Style: e.g., Symbolic/metaphysical (with confidence 0.0-1.0)
+
+- 🧪 Reasoning per category: Brief explanation for each
+  Separate each category's explanation with a newline
+
+- 📚 Relevant Sources & Background: 1-2 reputable sources
+
+- 📌 Suggested Further Research: Guidance on next steps
+
+- 🧽 Final Commentary: Human-like, persuasive, encouraging self-verification
+
+- 📾 Confidence Level: Percentage with rationale
+
+- 🎯 Truth Drift Score: Grounded / Speculative / Detached
+
+- 📊 Claim Length: Word count
+
+- ⏳ Temporal Reference: Recent/timeless/historical/future-focused
+
 Ensure scores are in the exact "Category: ███░░░░░░░ 3/10" format for parsing, with no bold or extra characters.
 """
 
@@ -162,6 +177,11 @@ def generate_pdf_report(entry):
         pdf.cell(0, 10, "Scores:", ln=True)
         for k, v in entry["scores"].items():
             pdf.cell(0, 10, f"  {k.capitalize()}: {v}/10", ln=True)
+        if "analysis" in entry:
+            sanitized_analysis = sanitize_for_pdf(entry["analysis"])
+            pdf.ln(5)
+            pdf.cell(0, 10, "Analysis:", ln=True)
+            pdf.multi_cell(0, 10, sanitized_analysis)
 
         pdf_file = f"evalia_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         pdf.output(pdf_file)
@@ -181,7 +201,7 @@ try:
     if os.path.exists(image_path):
         with open(image_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-        background_image = f"data:image/png;base64,{encoded_string}"  # Updated to PNG
+        background_image = f"data:image/png;base64,{encoded_string}"
         logger.info("Background image loaded successfully: %s", image_path)
     else:
         logger.warning("Background image not found at %s", image_path)
@@ -208,19 +228,19 @@ st.markdown(
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         font-family: 'Roboto', sans-serif;
-        line-height: 1.8;  /* Increased spacing */
+        line-height: 1.6;  /* Adjusted spacing */
         margin-bottom: 10px;
         white-space: pre-wrap;  /* Preserve newlines and spacing */
     }}
     .output-box p {{
-        margin-bottom: 20px;  /* Enhanced paragraph spacing */
+        margin-bottom: 15px;  /* Adjusted paragraph spacing */
     }}
     .output-box ul, .output-box ol {{
-        margin-bottom: 20px;  /* List spacing */
+        margin-bottom: 15px;  /* Adjusted list spacing */
         list-style-type: disc;  /* Bullet style for readability */
     }}
     .output-box li {{
-        margin-bottom: 10px;  /* Item spacing */
+        margin-bottom: 8px;  /* Adjusted item spacing */
     }}
     .stTextArea, .stFileUploader, .stTextInput {{
         background-color: #282828;
@@ -276,7 +296,7 @@ if st.button("Run Evaluation"):
             text_blob += "\n" + url_text
 
     if image_file:
-        st.image(image_file, caption="Uploaded Image", use_column_width=True)
+        st.image(image_file, caption="Uploaded Image", use_container_width=True)  # Updated to use_container_width
         with st.spinner("Extracting text from image..."):
             img_text = analyze_image(image_file)
             st.subheader("📝 Extracted Text")
@@ -294,6 +314,7 @@ if st.button("Run Evaluation"):
                 if match:
                     scores[cat.lower()] = int(match.group(1))
             analysis_log["scores"] = scores
+            analysis_log["analysis"] = result  # Add analysis to log for PDF
             logger.info(f"Parsed scores for claim '{text_blob[:50]}...': {scores}")
 
             # Place chart above text
