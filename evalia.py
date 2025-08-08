@@ -218,34 +218,49 @@ def spicy_tldr(analysis_text: str) -> str:
 
 def extract_reasoning_map(text: str) -> dict:
     """
-    Return a dict mapping each category to its paragraph,
-    but ONLY from the 'Reasoning per category:' section.
-    Avoids grabbing the score lines at the top.
+    Parse ONLY the 'Reasoning per category:' section into a dict:
+      { 'Logic': '...', 'Natural Law': '...', ... }
+    - Captures multi-line paragraphs until the next category OR next section.
+    - If the section is missing, returns {}.
     """
-    # Find the 'Reasoning per category' anchor
-    anchor = re.search(r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$", text, re.IGNORECASE | re.MULTILINE)
+    # 1) Find the 'Reasoning per category' anchor (emoji optional, bullet optional)
+    anchor = re.search(
+        r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$",
+        text, re.IGNORECASE | re.MULTILINE
+    )
     if not anchor:
         return {}
-    sub = text[anchor.end():]  # slice after the anchor line
 
-    # Capture blocks for each category until the next category header or end
+    # 2) Slice after the anchor line
+    sub = text[anchor.end():]
+
+    # 3) Define where a reasoning block should stop:
+    #    - next category header
+    #    - OR start of another major section (e.g., 📚 Relevant Sources, 📌 Suggested Further Research, 🧽 Final Commentary, etc.)
+    SECTION_BREAK = r"(?:^\s*(?:Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:|" \
+                    r"^\s*[-•]?\s*(?:📚\s*Relevant|📌\s*Suggested|🧽\s*Final|📾\s*Confidence|🎯\s*Truth|📊\s*Claim|⏳\s*Temporal|🔥\s*Verdict|🔑\s*Claim|📊\s*Bar)|\Z)"
+
     cat_regex = re.compile(
-        r"^\s*(Logic|Natural Law|Historical Accuracy|Source Credibility|Overall Reasonableness)\s*:\s*(.+?)(?=^\s*(?:Logic|Natural Law|Historical Accuracy|Source Credibility|Overall Reasonableness)\s*:|\Z)",
-        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+        rf"^\s*(Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:\s*(.+?)(?={SECTION_BREAK})",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL
     )
 
     out = {}
     for m in cat_regex.finditer(sub):
-        key = m.group(1).strip().title()
-        # Normalize key casing to match our UI labels exactly
-        key = {
-            "Logic": "Logic",
-            "Natural Law": "Natural Law",
-            "Historical Accuracy": "Historical Accuracy",
-            "Source Credibility": "Source Credibility",
-            "Overall Reasonableness": "Overall Reasonableness",
-        }.get(key, key)
-        out[key] = m.group(2).strip()
+        key_raw = m.group(1).strip()
+        # Normalize key to our UI labels
+        key_map = {
+            "logic": "Logic",
+            "natural law": "Natural Law",
+            "historical accuracy": "Historical Accuracy",
+            "source credibility": "Source Credibility",
+            "overall reasonableness": "Overall Reasonableness",
+        }
+        key = key_map.get(key_raw.lower(), key_raw)
+        # Clean up whitespace/newlines
+        val = re.sub(r"\n{2,}", "\n\n", m.group(2).strip())
+        out[key] = val
+
     return out
 
 # ----------------------- PDF (kept simple) -----------------------
