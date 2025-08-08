@@ -371,107 +371,83 @@ if st.button("Run Evaluation", use_container_width=True):
     if not (claim_input.strip() or image_file or url_input):
         st.error("Please provide a claim, URL, or image to evaluate.")
     else:
-        # Live status log
-        with st.status("Working…", expanded=True) as status:
-            st.write("Preparing inputs")
-            analysis_log = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "claim": claim_input,
-                "url": url_input,
-                "image_analysis": None,
-                "scores": {},
-                "brutality_mode": brutality_mode
-            }
+        analysis_log = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "claim": claim_input,
+            "url": url_input,
+            "image_analysis": None,
+            "scores": {},
+            "brutality_mode": brutality_mode
+        }
 
-            text_blob = claim_input
-            url_text_display = None
+        text_blob = claim_input
+        url_text_display = None
 
-            if url_input:
-                st.write("Fetching URL content")
+        if url_input:
+            with st.spinner("Fetching URL..."):
                 url_text = fetch_url_text(url_input)
-                url_text_display = url_text[:1500]
+                url_text_display = url_text[:1000]
                 text_blob += "\n[URL Content]: " + url_text
 
-            img_analysis = None
-            if image_file:
-                st.write("Analyzing image")
-                st.image(image_file, caption="Uploaded Image", use_container_width=True)
+        img_analysis = None
+        if image_file:
+            st.image(image_file, caption="Uploaded Image", use_container_width=True)
+            with st.spinner("Analyzing image..."):
                 img_analysis = analyze_image(image_file)
                 analysis_log["image_analysis"] = img_analysis
                 text_blob += (
-                    f"\n[Image Extracted Text]: {img_analysis.get('extracted_text','')}"
-                    f"\n[Image Description]: {img_analysis.get('description','')}"
-                    f"\n[Image Assessment]: {img_analysis.get('assessment','')}"
+                    f"\n[Image Extracted Text]: {img_analysis['extracted_text']}"
+                    f"\n[Image Description]: {img_analysis['description']}"
+                    f"\n[Image Assessment]: {img_analysis['assessment']}"
                 )
 
-            result = ""
-            scores = {}
-            if text_blob.strip():
-                st.write("Scoring claim")
+        result, scores = "", {}
+        if text_blob.strip():
+            with st.spinner("Scoring claim..."):
                 result = score_claim(text_blob, brutality_mode=brutality_mode)
-
                 categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
                 for cat in categories:
-                    match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", result, re.IGNORECASE | re.DOTALL)
+                    match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", result, re.IGNORECASE)
                     if match:
                         scores[cat.lower()] = int(match.group(1))
+                analysis_log["scores"] = scores
+                analysis_log["analysis"] = result
 
-            analysis_log["scores"] = scores
-            analysis_log["analysis"] = result
-
-            # Ready to render UI
-            status.update(label="Done", state="complete", expanded=False)
-
-        # ---- TABBED OUTPUT ----
+        # --------- NEW TABS ----------
         tabs = st.tabs(["Verdict", "Evidence", "Export"])
 
         with tabs[0]:
-            # Small summary metric (if parsed)
-            overall = scores.get("overall reasonableness".lower(), scores.get("overall reasonableness", scores.get("overall_reasonableness", None)))
-            if overall is None:
-                # Fallback: look for any key containing 'overall'
-                overall = next((v for k,v in scores.items() if "overall" in k), None)
-            if overall is not None:
-                st.metric("Overall Reasonableness", f"{overall}/10")
-
-            # Bar chart even with partial scores
-            categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
-            df = pd.DataFrame({
-                "Category": categories,
-                "Score": [scores.get(cat.lower(), 0) for cat in categories]
-            })
-            fig = px.bar(
-                df, x='Score', y='Category',
-                orientation='h', title='Score Overview', range_x=[0, 10],
-                color='Score', color_continuous_scale='blues'
-            )
-            fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
-            st.plotly_chart(fig, use_container_width=True)
-
+            if scores:
+                overall = scores.get("overall reasonableness", None)
+                if overall is not None:
+                    st.metric("Overall Reasonableness", f"{overall}/10")
+                df = pd.DataFrame({
+                    "Category": categories,
+                    "Score": [scores.get(cat.lower(), 0) for cat in categories]
+                })
+                fig = px.bar(df, x='Score', y='Category', orientation='h', range_x=[0, 10],
+                             color='Score', color_continuous_scale='blues', title='Score Overview')
+                fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
+                st.plotly_chart(fig, use_container_width=True)
             with st.expander("Full analysis"):
-                # Keep your exact model output formatting
-                st.markdown(result if result else "_No analysis produced._")
+                st.markdown(result if result else "_No analysis generated._")
 
         with tabs[1]:
-            if url_input:
-                st.subheader("URL extract (trimmed)")
-                st.text_area("Extracted text", url_text_display or "", height=180)
-                st.caption("Tip: include/exclude parts of this text, then re‑run.")
-
+            if url_text_display:
+                st.subheader("Extracted URL text")
+                st.text_area("", url_text_display, height=150)
             if img_analysis:
                 st.subheader("Image analysis")
                 st.info(
-                    f"Extracted Text: {img_analysis.get('extracted_text','')}\n\n"
-                    f"Description: {img_analysis.get('description','')}\n\n"
-                    f"Assessment: {img_analysis.get('assessment','')}"
+                    f"Extracted Text: {img_analysis['extracted_text']}\n\n"
+                    f"Description: {img_analysis['description']}\n\n"
+                    f"Assessment: {img_analysis['assessment']}"
                 )
-
-            if not (url_input or img_analysis):
+            if not url_text_display and not img_analysis:
                 st.write("_No evidence inputs provided._")
 
         with tabs[2]:
-            # Save memory & prepare PDF (exactly as before)
-            if analysis_log["scores"] or analysis_log.get("image_analysis"):
+            if scores or img_analysis:
                 save_to_memory(analysis_log)
                 st.success("✅ Analysis saved to memory.")
                 pdf_generated = generate_pdf_report(analysis_log)
@@ -486,9 +462,7 @@ if st.button("Run Evaluation", use_container_width=True):
                         )
                 else:
                     st.warning("PDF generation failed.")
-            else:
-                st.info("Nothing to export yet.")
-# ---------- DROP-IN REPLACEMENT END ----------
+# --------- END TABS ----------
 
 
 # Add Refine Claim button
