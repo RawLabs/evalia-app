@@ -29,7 +29,7 @@ def _configure_evalia_logger():
 
     logger = logging.getLogger("EvaliaLogger")
     logger.setLevel(logging.DEBUG)
-    logger.propagate = False  # don't bubble to root (prevents duplicate prints)
+    logger.propagate = False  # don't bubble to root (prevents duplicates)
 
     # Remove any handlers that might have been added by prior reruns
     for h in list(logger.handlers):
@@ -216,13 +216,37 @@ def spicy_tldr(analysis_text: str) -> str:
     summary = s.group(1).strip() if s else analysis_text.strip().split("\n", 1)[0][:240]
     return (f"{verdict}: {summary}")[:280]
 
-def extract_reasoning(text, category):
-    m = re.search(rf"{category}:\s*(.+?)(?=\n\S+:|\Z)", text, re.IGNORECASE | re.DOTALL)
-    return m.group(1).strip() if m else None
+def extract_reasoning_map(text: str) -> dict:
+    """
+    Return a dict mapping each category to its paragraph,
+    but ONLY from the 'Reasoning per category:' section.
+    Avoids grabbing the score lines at the top.
+    """
+    # Find the 'Reasoning per category' anchor
+    anchor = re.search(r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$", text, re.IGNORECASE | re.MULTILINE)
+    if not anchor:
+        return {}
+    sub = text[anchor.end():]  # slice after the anchor line
 
-def extract_change_hint(text):
-    m = re.search(r"(Suggested Further Research|Further Research)[^\n]*\n(.+)", text, re.IGNORECASE)
-    return m.group(2).strip() if m else None
+    # Capture blocks for each category until the next category header or end
+    cat_regex = re.compile(
+        r"^\s*(Logic|Natural Law|Historical Accuracy|Source Credibility|Overall Reasonableness)\s*:\s*(.+?)(?=^\s*(?:Logic|Natural Law|Historical Accuracy|Source Credibility|Overall Reasonableness)\s*:|\Z)",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+
+    out = {}
+    for m in cat_regex.finditer(sub):
+        key = m.group(1).strip().title()
+        # Normalize key casing to match our UI labels exactly
+        key = {
+            "Logic": "Logic",
+            "Natural Law": "Natural Law",
+            "Historical Accuracy": "Historical Accuracy",
+            "Source Credibility": "Source Credibility",
+            "Overall Reasonableness": "Overall Reasonableness",
+        }.get(key, key)
+        out[key] = m.group(2).strip()
+    return out
 
 # ----------------------- PDF (kept simple) -----------------------
 def sanitize_for_pdf(text):
@@ -347,7 +371,7 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
 
         img_analysis = None
         if image_file:
-            st.image(image_file, caption="Uploaded Image", use_column_width=True)
+            st.image(image_file, caption="Uploaded Image", use_column_width=True)  # FIXED
             with st.spinner("Analyzing image artifact..."):
                 img_analysis = analyze_image(image_file)
                 analysis_log["image_analysis"] = img_analysis
@@ -359,13 +383,18 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
 
         result, scores = "", {}
         categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
+        reasoning_map = {}
         if text_blob.strip():
             with st.spinner("Passing through the Gates..."):
                 result = score_claim(text_blob, brutality_mode=brutality_mode)
+                # Parse numeric scores from the Bar section
                 for cat in categories:
                     match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", result, re.IGNORECASE)
                     if match:
                         scores[cat.lower()] = int(match.group(1))
+                # Parse reasoning paragraphs only from the Reasoning section
+                reasoning_map = extract_reasoning_map(result)
+
                 analysis_log["scores"] = scores
                 analysis_log["analysis"] = result
                 logger.info("Parsed scores: %s", scores)
@@ -393,8 +422,8 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 for gate in gates:
                     score_val = scores.get(gate.lower(), 0)
                     with st.expander(f"{gate} Gate — {score_val}/10", expanded=False):
-                        snippet = extract_reasoning(result, gate)
-                        st.write(snippet if snippet else "_No detail available._")
+                        snippet = reasoning_map.get(gate)
+                        st.write(snippet if snippet else "_No detail available for this gate._")
 
                 # Stage 3 – Trial of Evidence (preview here too)
                 st.markdown("### 📜 Trial of Evidence")
@@ -413,8 +442,8 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
 
                 # Stage 4 – The Missing Piece
                 st.markdown("### 🔍 The Missing Piece")
-                change_hint = extract_change_hint(result)
-                st.write(change_hint if change_hint else "_No suggestions provided._")
+                change_hint = re.search(r"(?:Suggested Further Research|Further Research)[^\n]*\n(.+)", result, re.IGNORECASE)
+                st.write(change_hint.group(1).strip() if change_hint else "_No suggestions provided._")
 
                 # Stage 5 – Seal of Passage
                 st.markdown("## 🏆 Seal of Passage")
@@ -432,7 +461,7 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 draw.text((250, 270), verdict_line, font=font, fill="white", anchor="mm")
                 seal_buf = io.BytesIO()
                 img.save(seal_buf, format="PNG")
-                st.image(seal_buf.getvalue(), caption="Your Seal of Passage")
+                st.image(seal_buf.getvalue(), caption="Your Seal of Passage")  # FIXED
                 st.download_button(
                     "Download Seal as PNG",
                     data=seal_buf.getvalue(),
