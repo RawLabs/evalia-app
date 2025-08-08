@@ -347,7 +347,7 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
 
         img_analysis = None
         if image_file:
-            st.image(image_file, caption="Uploaded Image", use_container_width=True)
+            st.image(image_file, caption="Uploaded Image", use_column_width=True)
             with st.spinner("Analyzing image artifact..."):
                 img_analysis = analyze_image(image_file)
                 analysis_log["image_analysis"] = img_analysis
@@ -432,7 +432,7 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 draw.text((250, 270), verdict_line, font=font, fill="white", anchor="mm")
                 seal_buf = io.BytesIO()
                 img.save(seal_buf, format="PNG")
-                st.image(seal_buf.getvalue(), caption="Your Seal of Passage", use_container_width=False)
+                st.image(seal_buf.getvalue(), caption="Your Seal of Passage")
                 st.download_button(
                     "Download Seal as PNG",
                     data=seal_buf.getvalue(),
