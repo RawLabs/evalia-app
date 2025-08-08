@@ -363,80 +363,133 @@ with col1:
 with col2:
     image_file = st.file_uploader("Upload an image or meme (optional)", type=["png", "jpg", "jpeg"])
 
+    # ---------- DROP-IN REPLACEMENT START ----------
 download_ready = False
 pdf_generated = None
 
-if st.button("Run Evaluation"):
+if st.button("Run Evaluation", use_container_width=True):
     if not (claim_input.strip() or image_file or url_input):
         st.error("Please provide a claim, URL, or image to evaluate.")
     else:
-        analysis_log = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "claim": claim_input,
-            "url": url_input,
-            "image_analysis": None,
-            "scores": {},
-            "brutality_mode": brutality_mode
-        }
+        # Live status log
+        with st.status("Working…", expanded=True) as status:
+            st.write("Preparing inputs")
+            analysis_log = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "claim": claim_input,
+                "url": url_input,
+                "image_analysis": None,
+                "scores": {},
+                "brutality_mode": brutality_mode
+            }
 
-        text_blob = claim_input
-        if url_input:
-            with st.spinner("Fetching URL..."):
+            text_blob = claim_input
+            url_text_display = None
+
+            if url_input:
+                st.write("Fetching URL content")
                 url_text = fetch_url_text(url_input)
-                st.text_area("🔎 Extracted URL text", url_text[:1000], height=100)
+                url_text_display = url_text[:1500]
                 text_blob += "\n[URL Content]: " + url_text
 
-        if image_file:
-            st.image(image_file, caption="Uploaded Image", use_container_width=True)
-            with st.spinner("Analyzing image..."):
+            img_analysis = None
+            if image_file:
+                st.write("Analyzing image")
+                st.image(image_file, caption="Uploaded Image", use_container_width=True)
                 img_analysis = analyze_image(image_file)
-                st.subheader("📝 Image Analysis")
-                st.info(f"Extracted Text: {img_analysis['extracted_text']}\nDescription: {img_analysis['description']}\nAssessment: {img_analysis['assessment']}")
                 analysis_log["image_analysis"] = img_analysis
-                text_blob += f"\n[Image Extracted Text]: {img_analysis['extracted_text']}\n[Image Description]: {img_analysis['description']}\n[Image Assessment]: {img_analysis['assessment']}"
+                text_blob += (
+                    f"\n[Image Extracted Text]: {img_analysis.get('extracted_text','')}"
+                    f"\n[Image Description]: {img_analysis.get('description','')}"
+                    f"\n[Image Assessment]: {img_analysis.get('assessment','')}"
+                )
 
-        if text_blob.strip():
-            with st.spinner("Scoring claim..."):
+            result = ""
+            scores = {}
+            if text_blob.strip():
+                st.write("Scoring claim")
                 result = score_claim(text_blob, brutality_mode=brutality_mode)
+
                 categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
-                scores = {}
                 for cat in categories:
                     match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", result, re.IGNORECASE | re.DOTALL)
                     if match:
                         scores[cat.lower()] = int(match.group(1))
-                analysis_log["scores"] = scores
-                analysis_log["analysis"] = result
-                logger.info(f"Parsed scores for claim '{text_blob[:50]}...': {scores}")
 
-                # Display chart even with partial scores
-                df = pd.DataFrame({
-                    "Category": categories,
-                    "Score": [scores.get(cat.lower(), 0) for cat in categories]
-                })
-                fig = px.bar(df, x='Score', y='Category', orientation='h', title='Score Overview', range_x=[0, 10], color='Score', color_continuous_scale='blues')
-                fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
-                st.plotly_chart(fig, use_container_width=True)
+            analysis_log["scores"] = scores
+            analysis_log["analysis"] = result
 
-                # Display text
-                st.markdown(result)
+            # Ready to render UI
+            status.update(label="Done", state="complete", expanded=False)
 
-        else:
-            st.warning("No valid text to score. Please provide a claim or ensure media contains extractable text.")
+        # ---- TABBED OUTPUT ----
+        tabs = st.tabs(["Verdict", "Evidence", "Export"])
 
-        if analysis_log["scores"] or analysis_log.get("image_analysis"):
-            save_to_memory(analysis_log)
-            st.success("✅ Analysis saved to memory.")
-            pdf_generated = generate_pdf_report(analysis_log)
-            download_ready = True
+        with tabs[0]:
+            # Small summary metric (if parsed)
+            overall = scores.get("overall reasonableness".lower(), scores.get("overall reasonableness", scores.get("overall_reasonableness", None)))
+            if overall is None:
+                # Fallback: look for any key containing 'overall'
+                overall = next((v for k,v in scores.items() if "overall" in k), None)
+            if overall is not None:
+                st.metric("Overall Reasonableness", f"{overall}/10")
 
-if download_ready and pdf_generated:
-    with open(pdf_generated, "rb") as f:
-        st.download_button(
-            label="📄 Download PDF Report",
-            data=f,
-            file_name=pdf_generated,
-            mime="application/pdf"
-        )
+            # Bar chart even with partial scores
+            categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
+            df = pd.DataFrame({
+                "Category": categories,
+                "Score": [scores.get(cat.lower(), 0) for cat in categories]
+            })
+            fig = px.bar(
+                df, x='Score', y='Category',
+                orientation='h', title='Score Overview', range_x=[0, 10],
+                color='Score', color_continuous_scale='blues'
+            )
+            fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(fig, use_container_width=True)
+
+            with st.expander("Full analysis"):
+                # Keep your exact model output formatting
+                st.markdown(result if result else "_No analysis produced._")
+
+        with tabs[1]:
+            if url_input:
+                st.subheader("URL extract (trimmed)")
+                st.text_area("Extracted text", url_text_display or "", height=180)
+                st.caption("Tip: include/exclude parts of this text, then re‑run.")
+
+            if img_analysis:
+                st.subheader("Image analysis")
+                st.info(
+                    f"Extracted Text: {img_analysis.get('extracted_text','')}\n\n"
+                    f"Description: {img_analysis.get('description','')}\n\n"
+                    f"Assessment: {img_analysis.get('assessment','')}"
+                )
+
+            if not (url_input or img_analysis):
+                st.write("_No evidence inputs provided._")
+
+        with tabs[2]:
+            # Save memory & prepare PDF (exactly as before)
+            if analysis_log["scores"] or analysis_log.get("image_analysis"):
+                save_to_memory(analysis_log)
+                st.success("✅ Analysis saved to memory.")
+                pdf_generated = generate_pdf_report(analysis_log)
+                if pdf_generated and os.path.exists(pdf_generated):
+                    with open(pdf_generated, "rb") as f:
+                        st.download_button(
+                            label="📄 Download PDF Report",
+                            data=f,
+                            file_name=pdf_generated,
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                else:
+                    st.warning("PDF generation failed.")
+            else:
+                st.info("Nothing to export yet.")
+# ---------- DROP-IN REPLACEMENT END ----------
+
 
 # Add Refine Claim button
 if st.button("Refine Claim"):
@@ -444,4 +497,4 @@ if st.button("Refine Claim"):
     st.info("Update your claim based on the analysis and re-run the evaluation to dig deeper.")
 
 st.markdown("---")
-st.caption("Evalia © 2025 – AI-Powered Reasoning Engine (Dev Mode + PDF Export)")
+st.caption("Evalia © 2025 – AI-Powered Reasoning by Raw Cast Labs")
