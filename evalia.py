@@ -203,6 +203,13 @@ Rules for Brutality Mode:
 """
 
 def score_claim(text, brutality_mode=False):
+    """
+    Always return text that STARTS with the required header block.
+    Strategy:
+      1) Ask with persona prompt.
+      2) If header missing, retry with 'format-only' instruction.
+      3) If still missing, retry in Stoic prompt with 'format-only'.
+    """
     try:
         cleaned = sanitize_input(text)
         sys_prompt = BRUTAL_SCORING_PROMPT if brutality_mode else STOIC_SCORING_PROMPT
@@ -213,9 +220,17 @@ def score_claim(text, brutality_mode=False):
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"Claim:\n{cleaned}"}
+<<<<<<< HEAD
                 ]
             ).choices[0].message.content.strip()
 
+=======
+                ],
+                temperature=0.2,
+            ).choices[0].message.content.strip()
+
+        # 1) First attempt (persona)
+>>>>>>> 3d34f3d (corrections)
         raw_response = ask(sys_prompt)
         logger.info(
             "Raw GPT response for claim '%s' (Brutal: %s): %s",
@@ -224,13 +239,40 @@ def score_claim(text, brutality_mode=False):
             raw_response
         )
 
+<<<<<<< HEAD
         # One-shot format-only retry if header missing (new)
         has_header = bool(re.search(r"^-\s*🔥\s*Verdict:\s*\w+", raw_response, re.MULTILINE))
         if not has_header:
             logger.warning("Header missing; retrying with format-only instruction.")
             raw_response = ask(sys_prompt + "\nRespond ONLY in the exact structure above. No extra text.")
 
+=======
+        # Relaxed header detector: optional bullet, optional spaces, must contain '🔥 Verdict:'
+        header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
+        if header_ok:
+            return raw_response
+
+        # 2) Format-only retry under same persona
+        logger.warning("Header missing; retrying with format-only instruction (same persona).")
+        raw_response = ask(sys_prompt + "\nRespond ONLY in the exact structure above. No extra text before or after.")
+        header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
+        if header_ok:
+            logger.info("Format-only retry succeeded (same persona).")
+            return raw_response
+
+        # 3) Last-resort: Stoic format-only (guarantee structure)
+        logger.warning("Second attempt failed; falling back to STOIC format-only.")
+        raw_response = ask(STOIC_SCORING_PROMPT + "\nRespond ONLY in the exact structure above. No extra text before or after.")
+        header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
+        if header_ok:
+            logger.info("Stoic format-only fallback succeeded.")
+            return raw_response
+
+        # If everything failed, return what we have (UI will show 'No scores parsed')
+        logger.error("All retries failed to produce a parseable header block.")
+>>>>>>> 3d34f3d (corrections)
         return raw_response
+
     except Exception:
         logger.error("Scoring error", exc_info=True)
         return "Error: Unable to score claim due to an issue."
@@ -521,10 +563,15 @@ if st.button("Cross the Threshold (Run Evaluation)", key="eval_button", use_cont
                 # Parse numeric scores from the Bar section (░* to tolerate 10/10)  <-- changed
                 for cat in categories:
                     match = re.search(
+<<<<<<< HEAD
                         rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░*\s*(\d+)/10",
                         result,
                         re.IGNORECASE
                     )
+=======
+    rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░*\s*(\d+)/10", result, re.IGNORECASE)
+
+>>>>>>> 3d34f3d (corrections)
                     if match:
                         scores[cat.lower()] = int(match.group(1))
                 # Parse reasoning paragraphs only from the Reasoning section
