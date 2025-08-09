@@ -295,8 +295,9 @@ def extract_reasoning_map(text: str) -> dict:
     return reasoning_map
 
 # ----------------------- Seal Renderer -----------------------
+d# ----------------------- Seal Renderer -----------------------
 def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str = None) -> bytes:
-    W, H = 800, 600
+    W, H = 400, 300  # Reduced from 800x600 to 400x300 for a smaller seal
     bg_color = (139, 0, 0) if brutality_mode else (75, 75, 75)  # Dark red or grey
     text_color = (234, 234, 234)
     accent_text = (126, 200, 255)
@@ -305,24 +306,24 @@ def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str =
 
     # Optional logo
     try:
-        logo = Image.open(logo_path).convert("RGBA").resize((140, 140))
-        lx, ly = W - 160, H - 160
+        logo = Image.open(logo_path).convert("RGBA").resize((70, 70))  # Reduced logo size to match smaller canvas
+        lx, ly = W - 80, H - 80
         img.alpha_composite(logo, (lx, ly))
     except Exception:
         pass  # safe fail: render without logo
 
     # Fonts
     try:
-        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
-        verdict_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 38)
-        small_font = ImageFont.truetype("DejaVuSans.ttf", 24)
+        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 25)  # Reduced font size
+        verdict_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 19)  # Reduced font size
+        small_font = ImageFont.truetype("DejaVuSans.ttf", 12)  # Reduced font size
     except Exception:
         title_font = ImageFont.load_default()
         verdict_font = ImageFont.load_default()
         small_font = ImageFont.load_default()
 
     # Title
-    draw.text((W // 2, 75), "Seal of Passage", font=title_font, fill=text_color, anchor="mm")
+    draw.text((W // 2, 37), "Seal of Passage", font=title_font, fill=text_color, anchor="mm")
 
     # Verdict text (wrapped)
     max_text_w = int(W * 0.72)
@@ -340,10 +341,10 @@ def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str =
     if current_line:
         lines.append(' '.join(current_line))
     wrapped = '\n'.join(lines)
-    draw.multiline_text((W // 2, 390), wrapped, font=verdict_font, fill=text_color, anchor="mm", align="center", spacing=8)
+    draw.multiline_text((W // 2, 195), wrapped, font=verdict_font, fill=text_color, anchor="mm", align="center", spacing=4)
 
     # Footer
-    draw.text((W // 2, H - 80), "Evalia • Validation Through Inquiry", font=small_font, fill=accent_text, anchor="mm")
+    draw.text((W // 2, H - 40), "Evalia • Validation Through Inquiry", font=small_font, fill=accent_text, anchor="mm")
 
     # Export PNG bytes
     buf = io.BytesIO()
@@ -555,7 +556,7 @@ if st.button("Cross the Threshold (Run Evaluation)", key="eval_button", use_cont
                     brutality_mode=brutality_mode,
                     logo_path="Evalia Logo Silver.png"
                 )
-                st.image(seal_png, caption="Evalia Seal of Passage", use_column_width=True)
+                st.image(seal_png, caption="Evalia Seal of Passage", width=300)  # Fixed width of 300 pixels
                 st.download_button(
                     "Download Seal as PNG",
                     data=seal_png,
