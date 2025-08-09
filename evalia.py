@@ -149,56 +149,40 @@ def fetch_url_text(url):
 
 # ----------------------- Prompts & Scoring -----------------------
 STOIC_SCORING_PROMPT = """
-You are Evalia, disciplined and precise. Your goal is to produce a comprehensive,
-research-backed claim evaluation that is both deeply analytical and useful for further investigation.
-
-Return a Markdown analysis in this exact structure and order:
-
+You are Evalia, disciplined and precise. Clinical tone; no fluff.
+Return a Markdown analysis in this exact structure:
 - 🔥 Verdict: <Plausible|Implausible|Speculative|Unknown|Proven>
-- 🔑 Claim Summary: (One sentence neutral summary of the claim)
+- 🔑 Claim Summary: ...
 - 📊 Bar-style Score Overview:
   - Logic: ███░░░░░░░ 3/10
   - Natural Law: ██░░░░░░░░ 2/10
   - Historical Accuracy: ████░░░░░░ 4/10
   - Source Credibility: █░░░░░░░░░ 1/10
   - Overall Reasonableness: ███░░░░░░░ 3/10
-- 🌺 Grounding Meter: (Brief qualitative measure of how well-founded the claim is)
-- 🧠 Emotion Meter: (Brief assessment of emotional vs. rational tone)
-- 🤖 AI Origin: (If applicable)
-- 📝 Detected Style: (E.g., formal, sensationalist, satirical, technical)
+- 🌺 Grounding Meter: ...
+- 🧠 Emotion Meter: ...
+- 🤖 AI Origin: ...
+- 📝 Detected Style: ...
 - 🧪 Reasoning per category:
-  Logic:
-    Provide 2–4 paragraphs of structured reasoning, clearly explaining the logical strengths and weaknesses.
-    Use examples, analogies, or known logical fallacies if applicable.
-  Natural Law:
-    Provide 2–4 paragraphs detailing how the claim aligns or conflicts with known scientific or economic principles.
-  Historical Accuracy:
-    Provide 2–4 paragraphs comparing the claim to documented historical events or timelines.
-  Source Credibility:
-    Provide 2–4 paragraphs assessing the reliability of the sources behind the claim, citing specifics.
-  Overall Reasonableness:
-    Provide a synthesis judgment — weigh logic, evidence, and plausibility.
-- 📚 Relevant Sources & Background:
-    Provide 3–6 clickable markdown links to credible, primary, or authoritative sources (gov, edu, peer-reviewed research, or reputable investigative journalism — avoid Snopes/FactCheck-style).
-    Each link should have a short annotation on why it’s relevant.
-- 📌 Suggested Further Research:
-    2–3 suggestions for next steps in investigating or verifying the claim.
-- 🧽 Final Commentary:
-    Concise wrap-up for the reader.
-- 📾 Confidence Level: (0–100%)
-- 🎯 Truth Drift Score: (0–100, higher means further from likely truth)
-- 📊 Claim Length: (Word count)
-- ⏳ Temporal Reference: (Time period referred to in the claim)
-
+  Logic: ...
+  Natural Law: ...
+  Historical Accuracy: ...
+  Source Credibility: ...
+  Overall Reasonableness: ...
+- 📚 Relevant Sources & Background: [Title](https://...)
+- 📌 Suggested Further Research: ...
+- 🧽 Final Commentary: ...
+- 📾 Confidence Level: ...
+- 🎯 Truth Drift Score: ...
+- 📊 Claim Length: ...
+- ⏳ Temporal Reference: ...
 Ensure exact 'Category: █... 3/10' formatting for parsing.
 """
 
 BRUTAL_SCORING_PROMPT = """
-You are Evalia — sharp-tongued, witty, and brutally honest. Same structure and detail requirements as the stoic prompt above,
-but with biting commentary where warranted. Still provide the same depth, research links, and structured paragraphs.
-Do not water down criticism. Maintain accuracy.
+You are Evalia — witty, biting, correct. Same structure as stoic; tone is sharp.
+Return the Markdown in the exact structure listed in the stoic prompt (scores same format).
 """
-
 
 def score_claim(text, brutality_mode=False):
     try:
@@ -234,144 +218,35 @@ def spicy_tldr(analysis_text: str) -> str:
 
 def extract_reasoning_map(text: str) -> dict:
     """
-    Parse ONLY the 'Reasoning per category:' section into a dict:
-      { 'Logic': '...', 'Natural Law': '...', 'Historical Accuracy': '...', 'Source Credibility': '...', 'Overall Reasonableness': '...' }
-    - Captures multi-line paragraphs until the next category OR the next major section.
-    - If the section is missing, returns {}.
+    Return a dict mapping each category to its paragraph,
+    but ONLY from the 'Reasoning per category:' section.
+    Avoids grabbing the score lines at the top.
     """
-    # 1) Find the 'Reasoning per category' anchor (emoji optional, bullet optional)
-    anchor = re.search(
-        r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$",
-        text, re.IGNORECASE | re.MULTILINE
-    )
+    # Find the 'Reasoning per category' anchor
+    anchor = re.search(r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$", text, re.IGNORECASE | re.MULTILINE)
     if not anchor:
         return {}
+    sub = text[anchor.end():]  # slice after the anchor line
 
-    # 2) Slice after the anchor line
-    sub = text[anchor.end():]
-
-    # 3) Where a reasoning block should stop:
-    SECTION_BREAK = (
-        r"(?:^\s*(?:Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:|"
-        r"^\s*[-•]?\s*(?:📚\s*Relevant|📌\s*Suggested|🧽\s*Final|📾\s*Confidence|🎯\s*Truth|📊\s*Claim|⏳\s*Temporal|🔥\s*Verdict|🔑\s*Claim|📊\s*Bar)|\Z)"
-    )
-
+    # Capture blocks for each category until the next category header or end
     cat_regex = re.compile(
-        rf"^\s*(Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:\s*(.+?)(?={SECTION_BREAK})",
-        re.IGNORECASE | re.MULTILINE | re.DOTALL
+        r"^\s*(Logic|Natural Law|Historical Accuracy|Source Credibility|Overall Reasonableness)\s*:\s*(.+?)(?=^\s*(?:Logic|Natural Law|Historical Accuracy|Source Credibility|Overall Reasonableness)\s*:|\Z)",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
     )
 
     out = {}
     for m in cat_regex.finditer(sub):
-        key_raw = m.group(1).strip().lower()
-        key_map = {
-            "logic": "Logic",
-            "natural law": "Natural Law",
-            "historical accuracy": "Historical Accuracy",
-            "source credibility": "Source Credibility",
-            "overall reasonableness": "Overall Reasonableness",
-        }
-        key = key_map.get(key_raw, m.group(1).strip())
-        val = re.sub(r"\n{2,}", "\n\n", m.group(2).strip())
-        out[key] = val
-
+        key = m.group(1).strip().title()
+        # Normalize key casing to match our UI labels exactly
+        key = {
+            "Logic": "Logic",
+            "Natural Law": "Natural Law",
+            "Historical Accuracy": "Historical Accuracy",
+            "Source Credibility": "Source Credibility",
+            "Overall Reasonableness": "Overall Reasonableness",
+        }.get(key, key)
+        out[key] = m.group(2).strip()
     return out
-# ----------------------- Seal Renderer (Evalia-branded) -----------------------
-def _text_width(draw, text, font):
-    """Measure text width using textbbox for broad Pillow compatibility."""
-    if not text:
-        return 0
-    x0, y0, x1, y1 = draw.textbbox((0, 0), text, font=font)
-    return x1 - x0
-
-def _wrap_text_bbox(draw, text, font, max_width_px):
-    """Word-wrap text to fit max width using textbbox (no textlength dependency)."""
-    words = text.split()
-    if not words:
-        return ""
-    lines, line = [], words[0]
-    for w in words[1:]:
-        candidate = f"{line} {w}"
-        if _text_width(draw, candidate, font) <= max_width_px:
-            line = candidate
-        else:
-            lines.append(line)
-            line = w
-    lines.append(line)
-    return "\n".join(lines)
-
-def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str = "Evalia Logo Silver.png") -> bytes:
-    """
-    Builds an 800x800 PNG 'Seal of Passage' using the Evalia logo (if present).
-    - verdict_text: short TL;DR or verdict line
-    - brutality_mode: ring color changes with persona
-    - logo_path: PNG with transparent background preferred
-    Returns PNG bytes.
-    """
-    import io
-    from PIL import Image, ImageDraw, ImageFont
-
-    W, H = 800, 800
-    img = Image.new("RGBA", (W, H), color=(24, 24, 24, 255))
-    draw = ImageDraw.Draw(img)
-
-    # Subtle vignette
-    vignette = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    vdraw = ImageDraw.Draw(vignette)
-    vdraw.ellipse((40, 40, W - 40, H - 40), fill=(0, 0, 0, 0))
-    vdraw.rectangle((0, 0, W, H), outline=None, fill=(0, 0, 0, 120))
-    img = Image.alpha_composite(img, vignette)
-    draw = ImageDraw.Draw(img)
-
-    # Colors
-    ring = (200, 40, 40, 255) if brutality_mode else (60, 120, 220, 255)
-    accent_dark = (80, 80, 80, 255)
-    text_color = (235, 235, 235, 255)
-    accent_text = (190, 190, 190, 255)
-
-    # Outer rings
-    draw.ellipse((60, 60, W - 60, H - 60), outline=ring, width=14)
-    draw.ellipse((82, 82, W - 82, H - 82), outline=accent_dark, width=3)
-
-    # Try to place the Evalia logo
-    try:
-        if os.path.exists(logo_path):
-            logo = Image.open(logo_path).convert("RGBA")
-            max_logo_w, max_logo_h = 440, 200
-            scale = min(max_logo_w / logo.width, max_logo_h / logo.height, 1.0)
-            logo = logo.resize((int(logo.width * scale), int(logo.height * scale)))
-            lx = (W - logo.width) // 2
-            ly = 140
-            img.alpha_composite(logo, (lx, ly))
-    except Exception:
-        pass  # safe fail: render without logo
-
-    # Fonts
-    try:
-        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
-        verdict_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 38)
-        small_font = ImageFont.truetype("DejaVuSans.ttf", 24)
-    except Exception:
-        title_font = ImageFont.load_default()
-        verdict_font = ImageFont.load_default()
-        small_font = ImageFont.load_default()
-
-    # Title
-    draw.text((W // 2, 75), "Seal of Passage", font=title_font, fill=text_color, anchor="mm")
-
-    # Verdict text (wrapped)
-    max_text_w = int(W * 0.72)
-    wrapped = _wrap_text_bbox(draw, verdict_text or "Evaluation Complete", verdict_font, max_text_w)
-    draw.multiline_text((W // 2, 390), wrapped, font=verdict_font, fill=text_color, anchor="mm", align="center", spacing=8)
-
-    # Footer
-    draw.text((W // 2, H - 80), "Evalia • Validation Through Inquiry", font=small_font, fill=accent_text, anchor="mm")
-
-    # Export PNG bytes
-    buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="PNG")
-    buf.seek(0)
-    return buf.getvalue()
 
 # ----------------------- PDF (kept simple) -----------------------
 def sanitize_for_pdf(text):
@@ -541,19 +416,14 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 if result:
                     st.markdown(f"**TL;DR:** {spicy_tldr(result)}")
 
-                                # Stage 2 – Gates of Reason
+                # Stage 2 – Gates of Reason
                 st.markdown("### 🚪 Gates of Reason")
                 gates = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility"]
-
-                # Guard: if parsing failed or section missing, keep it empty dict
-                _reasoning = reasoning_map or {}
-
                 for gate in gates:
                     score_val = scores.get(gate.lower(), 0)
                     with st.expander(f"{gate} Gate — {score_val}/10", expanded=False):
-                        snippet = _reasoning.get(gate, "")
+                        snippet = reasoning_map.get(gate)
                         st.write(snippet if snippet else "_No detail available for this gate._")
-
 
                 # Stage 3 – Trial of Evidence (preview here too)
                 st.markdown("### 📜 Trial of Evidence")
@@ -575,24 +445,29 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 change_hint = re.search(r"(?:Suggested Further Research|Further Research)[^\n]*\n(.+)", result, re.IGNORECASE)
                 st.write(change_hint.group(1).strip() if change_hint else "_No suggestions provided._")
 
-                                                # Stage 5 – Seal of Passage (Evalia-branded)
+                # Stage 5 – Seal of Passage
                 st.markdown("## 🏆 Seal of Passage")
                 verdict_line = spicy_tldr(result) if result else "Evaluation Complete"
-
-                seal_png = render_evalia_seal(
-                    verdict_text=verdict_line,
-                    brutality_mode=brutality_mode,
-                    logo_path="Evalia Logo Silver.png"  # ensure file exists in same folder
-                )
-
-                st.image(seal_png, caption="Evalia Seal of Passage", use_column_width=True)
+                # Generate seal image
+                img = Image.new("RGB", (500, 500), color=(28, 28, 28))
+                draw = ImageDraw.Draw(img)
+                try:
+                    font = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
+                except:
+                    font = ImageFont.load_default()
+                border_color = (200, 0, 0) if brutality_mode else (0, 100, 200)
+                draw.ellipse((25, 25, 475, 475), outline=border_color, width=8)
+                draw.text((250, 220), "Seal of Passage", font=font, fill="white", anchor="mm")
+                draw.text((250, 270), verdict_line, font=font, fill="white", anchor="mm")
+                seal_buf = io.BytesIO()
+                img.save(seal_buf, format="PNG")
+                st.image(seal_buf.getvalue(), caption="Your Seal of Passage")  # FIXED
                 st.download_button(
                     "Download Seal as PNG",
-                    data=seal_png,
-                    file_name="evalia_seal_of_passage.png",
+                    data=seal_buf.getvalue(),
+                    file_name="seal_of_passage.png",
                     mime="image/png"
                 )
-
 
                 with st.expander("Full analysis (for the record)"):
                     st.markdown(result if result else "_No analysis generated._")
@@ -621,16 +496,14 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 st.success("✅ Analysis saved to memory.")
                 pdf_generated = generate_pdf_report(analysis_log)
                 if pdf_generated and os.path.exists(pdf_generated):
-                 with open(pdf_generated, "rb") as f:
-                  st.download_button(
-                  label="📄 Download PDF Report",
-                  data=f,
-                  file_name=pdf_generated,
-                  mime="application/pdf",
-                  use_container_width=True,
-                  key="pdf_dl"
-                  )
-
+                    with open(pdf_generated, "rb") as f:
+                        st.download_button(
+                            label="📄 Download PDF Report",
+                            data=f,
+                            file_name=pdf_generated,
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
                 else:
                     st.warning("PDF generation failed.")
         # -----------------------------------------------------------
