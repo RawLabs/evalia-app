@@ -194,28 +194,87 @@ Ensure exact 'Category: █... 3/10' formatting for parsing.
 """
 
 BRUTAL_SCORING_PROMPT = """
-You are Evalia — sharp-tongued, witty, and brutally honest. You MUST return a Markdown analysis in this EXACT structure and order: start with 🔥 Verdict, then 🔑 Claim Summary, then 📊 Bar-style Score Overview with precise formatting like 'Logic: ███░░░░░░░ 3/10' for each category, followed by all other sections as listed below. Infuse biting commentary ONLY in the 🧪 Reasoning per category and 🧽 Final Commentary sections—do NOT deviate from the structure or scores format. Maintain accuracy and depth.
+IMPORTANT: You MUST output EXACTLY in the format below. Start immediately with '- 🔥 Verdict:' — do NOT add any introductory text, narrative, or anything else before it. Infuse witty, biting, brutally honest commentary ONLY in the 'Reasoning per category' and 'Final Commentary' sections. Use sarcasm and sharp critique there, but keep all other sections neutral and factual. End after the last section — no additional text.
 
-Example output (follow EXACTLY, with wit in reasoning):
-- 🔥 Verdict: Implausible
-- 🔑 Claim Summary: A claim asserts an unverified breakthrough in technology.
+Format to follow precisely:
+- 🔥 Verdict: <One word: Plausible|Implausible|Speculative|Unknown|Proven>
+- 🔑 Claim Summary: (One neutral sentence summarizing the claim)
 - 📊 Bar-style Score Overview:
   - Logic: ███░░░░░░░ 3/10
   - Natural Law: ██░░░░░░░░ 2/10
   - Historical Accuracy: ████░░░░░░ 4/10
   - Source Credibility: █░░░░░░░░░ 1/10
   - Overall Reasonableness: ███░░░░░░░ 3/10
-- 🌺 Grounding Meter: (Brief qualitative measure)
-- 🧠 Emotion Meter: (Brief assessment)
-- 🤖 AI Origin: (If applicable)
-- 📝 Detected Style: (E.g., sensationalist)
+- 🌺 Grounding Meter: (Brief qualitative measure of how well-founded the claim is)
+- 🧠 Emotion Meter: (Brief assessment of emotional vs. rational tone)
+- 🤖 AI Origin: (If applicable, assess likelihood of AI generation)
+- 📝 Detected Style: (E.g., formal, sensationalist, satirical)
 - 🧪 Reasoning per category:
   Logic:
-    Oh please, this logic is a house of cards—built on sand, not stone! One gust of scrutiny and it collapses. No evidence supports this leap.
-  ... (other categories with similar wit)
-- ... (rest as in stoic prompt)
+    (2–4 paragraphs of brutal, witty reasoning on logical strengths/weaknesses. Use sarcasm, analogies, fallacies.)
+  Natural Law:
+    (2–4 paragraphs: Brutal analysis vs. scientific/economic principles.)
+  Historical Accuracy:
+    (2–4 paragraphs: Compare to history with biting critique.)
+  Source Credibility:
+    (2–4 paragraphs: Assess sources harshly.)
+  Overall Reasonableness:
+    (Synthesis: Weigh everything with sharp judgment.)
+- 📚 Relevant Sources & Background:
+    (3–6 markdown links to credible sources with annotations.)
+- 📌 Suggested Further Research:
+    (2–3 specific next steps.)
+- 🧽 Final Commentary:
+    (Concise, brutally honest wrap-up with wit.)
+- 📾 Confidence Level: (0–100%)
+- 🎯 Truth Drift Score: (0–100, higher = further from truth)
+- 📊 Claim Length: (Word count)
+- ⏳ Temporal Reference: (Time period in claim)
+---
 
-Ensure exact 'Category: █... 3/10' formatting for parsing.
+Example (follow this exactly, replacing with real analysis):
+- 🔥 Verdict: Implausible
+- 🔑 Claim Summary: An individual claims an AI forex system with 94% success will disrupt global markets.
+- 📊 Bar-style Score Overview:
+  - Logic: ███░░░░░░░ 3/10
+  - Natural Law: ██░░░░░░░░ 2/10
+  - Historical Accuracy: ████░░░░░░ 4/10
+  - Source Credibility: █░░░░░░░░░ 1/10
+  - Overall Reasonableness: ███░░░░░░░ 3/10
+- 🌺 Grounding Meter: Shaky at best, like a Jenga tower in an earthquake.
+- 🧠 Emotion Meter: Heavy on hype, light on reason—pure adrenaline rush.
+- 🤖 AI Origin: Possible, given the polished overconfidence.
+- 📝 Detected Style: Sensationalist hype.
+- 🧪 Reasoning per category:
+  Logic:
+    Oh, darling, this logic is flimsier than a house of cards in a hurricane. Claiming 94% success from 'a few days' testing? That's not logic; that's lottery-ticket thinking.
+    Paragraph 2: Brutal example of confirmation bias here...
+  Natural Law:
+    Markets aren't toys you 'break' with AI magic. Econ 101: Volatility laughs at your 94%.
+    Paragraph 2: Savage critique...
+  Historical Accuracy:
+    History is littered with failed trading bots—remember LTCM? Yours joins the graveyard.
+    Paragraph 2: More biting history...
+  Source Credibility:
+    An anonymous individual's word? Might as well trust a fortune cookie.
+    Paragraph 2: Harsh source takedown...
+  Overall Reasonableness:
+    Synthesis: This reeks of scam; reasonableness near zero.
+- 📚 Relevant Sources & Background:
+    - [CFTC Warnings](https://www.cftc.gov): Regulator alerts on forex scams.
+    - [Journal of Finance Study](https://example.edu): AI trading performance data.
+    - Etc.
+- 📌 Suggested Further Research:
+    1. Backtest over years, not days.
+    2. Check regulatory databases.
+- 🧽 Final Commentary:
+    Wake up, dreamer—this won't disrupt a lemonade stand, let alone forex.
+- 📾 Confidence Level: 20%
+- 🎯 Truth Drift Score: 85
+- 📊 Claim Length: 45
+- ⏳ Temporal Reference: Present day
+
+REMEMBER: Output ONLY this exact structure. No intro, no extra text. Ensure scores are in 'Category: █... #/10' format for parsing.
 """
 
 def score_claim(text, brutality_mode=False):
@@ -234,13 +293,14 @@ def score_claim(text, brutality_mode=False):
             "Raw GPT response for claim '%s' (Brutal: %s): %s",
             cleaned[:50] + "..." if len(cleaned) > 50 else cleaned,
             brutality_mode,
-            raw_response[:300]
+            raw_response  # Log full for debug (was truncated)
         )
-        # Parse scores
+        # Parse scores with improved regex: More flexible whitespace, no **, case-insensitive, no **, optional spaces/emojis.
         scores = {}
         categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
         for cat in categories:
-            match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", raw_response, re.IGNORECASE)
+            # Updated regex: Handles variations like '- Logic:' or 'Logic:' , allows optional - or emoji before cat.
+            match = re.search(rf"^\s*[-•]?\s*[{re.escape(cat[0])}]?\s*{re.escape(cat)}\s*:\s*█+░*\s*(\d+)/10", raw_response, re.IGNORECASE | re.MULTILINE)
             if match:
                 scores[cat.lower()] = int(match.group(1))
         if not scores and brutality_mode:
@@ -254,9 +314,10 @@ def score_claim(text, brutality_mode=False):
             )
             raw_response = response.choices[0].message.content.strip()
             for cat in categories:
-                match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", raw_response, re.IGNORECASE)
+                match = re.search(rf"^\s*[-•]?\s*[{re.escape(cat[0])}]?\s*{re.escape(cat)}\s*:\s*█+░*\s*(\d+)/10", raw_response, re.IGNORECASE | re.MULTILINE)
                 if match:
                     scores[cat.lower()] = int(match.group(1))
+        logger.info("Parsed scores: %s", scores)  # Already there, but good.
         return raw_response
     except Exception:
         logger.error("Scoring error", exc_info=True)
