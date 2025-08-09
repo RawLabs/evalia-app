@@ -295,7 +295,7 @@ def extract_reasoning_map(text: str) -> dict:
     return reasoning_map
 
 # ----------------------- Seal Renderer -----------------------
-d# ----------------------- Seal Renderer -----------------------
+# ----------------------- Seal Renderer -----------------------
 def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str = None) -> bytes:
     W, H = 400, 300  # Reduced from 800x600 to 400x300 for a smaller seal
     bg_color = (139, 0, 0) if brutality_mode else (75, 75, 75)  # Dark red or grey
