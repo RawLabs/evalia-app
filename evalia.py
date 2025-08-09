@@ -148,176 +148,88 @@ def fetch_url_text(url):
         return f"Error fetching URL: {str(e)}"
 
 # ----------------------- Prompts & Scoring -----------------------
-STOIC_SCORING_PROMPT = """
-You are Evalia, disciplined and precise. Your goal is to produce a comprehensive,
-research-backed claim evaluation that is both deeply analytical and useful for further investigation.
-
-Return a Markdown analysis in this exact structure and order:
+# ---- Strict header the parser expects (new) ----
+OUTPUT_FORMAT = """
+You MUST begin with EXACTLY this block (no text before it):
 
 - 🔥 Verdict: <Plausible|Implausible|Speculative|Unknown|Proven>
-- 🔑 Claim Summary: (One sentence neutral summary of the claim)
+- 🔑 Claim Summary: <one concise, neutral sentence>
 - 📊 Bar-style Score Overview:
   - Logic: ███░░░░░░░ 3/10
   - Natural Law: ██░░░░░░░░ 2/10
   - Historical Accuracy: ████░░░░░░ 4/10
   - Source Credibility: █░░░░░░░░░ 1/10
   - Overall Reasonableness: ███░░░░░░░ 3/10
-- 🌺 Grounding Meter: (Brief qualitative measure of how well-founded the claim is)
-- 🧠 Emotion Meter: (Brief assessment of emotional vs. rational tone)
-- 🤖 AI Origin: (If applicable)
-- 📝 Detected Style: (E.g., formal, sensationalist, satirical, technical)
+- 🌺 Grounding Meter: <short text>
+- 🧠 Emotion Meter: <short text>
+- 🤖 AI Origin: <short text or N/A>
+- 📝 Detected Style: <short text>
 - 🧪 Reasoning per category:
   Logic:
-    Provide 2–4 paragraphs of structured reasoning, clearly explaining the logical strengths and weaknesses.
-    Use examples, analogies, or known logical fallacies if applicable.
+    <2–4 short paragraphs>
   Natural Law:
-    Provide 2–4 paragraphs detailing how the claim aligns or conflicts with known scientific or economic principles.
+    <2–4 short paragraphs>
   Historical Accuracy:
-    Provide 2–4 paragraphs comparing the claim to documented historical events or timelines.
+    <2–4 short paragraphs>
   Source Credibility:
-    Provide 2–4 paragraphs assessing the reliability of the sources behind the claim, citing specifics.
+    <2–4 short paragraphs>
   Overall Reasonableness:
-    Provide a synthesis judgment — weigh logic, evidence, and plausibility.
+    <2–3 sentences synthesis>
 - 📚 Relevant Sources & Background:
-    Provide 3–6 clickable markdown links to credible, primary, or authoritative sources (gov, edu, peer-reviewed research, or reputable investigative journalism — avoid Snopes/FactCheck-style).
-    Each link should have a short annotation on why it’s relevant.
+    <3–6 markdown links with brief annotations>
 - 📌 Suggested Further Research:
-    2–3 suggestions for next steps in investigating or verifying the claim.
+    <2–3 bullet points>
 - 🧽 Final Commentary:
-    Concise wrap-up for the reader.
-- 📾 Confidence Level: (0–100%)
-- 🎯 Truth Drift Score: (0–100, higher means further from likely truth)
-- 📊 Claim Length: (Word count)
-- ⏳ Temporal Reference: (Time period referred to in the claim)
-
-Ensure exact 'Category: █... 3/10' formatting for parsing.
+    <concise wrap-up>
+- 📾 Confidence Level: <0–100%>
+- 🎯 Truth Drift Score: <0–100>
+- 📊 Claim Length: <integer words>
+- ⏳ Temporal Reference: <short text>
 """
 
-BRUTAL_SCORING_PROMPT = """
-IMPORTANT: You MUST output EXACTLY in the format below. Start immediately with '- 🔥 Verdict:' — do NOT add any introductory text, narrative, or anything else before it. Infuse witty, biting, brutally honest commentary ONLY in the 'Reasoning per category' and 'Final Commentary' sections. Use sarcasm and sharp critique there, but keep all other sections neutral and factual. End after the last section — no additional text.
+STOIC_SCORING_PROMPT = f"""
+You are Evalia, disciplined and precise. Produce the analysis in the exact structure below.
+{OUTPUT_FORMAT}
+Follow the structure exactly; do not add or remove sections.
+"""
 
-Format to follow precisely:
-- 🔥 Verdict: <One word: Plausible|Implausible|Speculative|Unknown|Proven>
-- 🔑 Claim Summary: (One neutral sentence summarizing the claim)
-- 📊 Bar-style Score Overview:
-  - Logic: ███░░░░░░░ 3/10
-  - Natural Law: ██░░░░░░░░ 2/10
-  - Historical Accuracy: ████░░░░░░ 4/10
-  - Source Credibility: █░░░░░░░░░ 1/10
-  - Overall Reasonableness: ███░░░░░░░ 3/10
-- 🌺 Grounding Meter: (Brief qualitative measure of how well-founded the claim is)
-- 🧠 Emotion Meter: (Brief assessment of emotional vs. rational tone)
-- 🤖 AI Origin: (If applicable, assess likelihood of AI generation)
-- 📝 Detected Style: (E.g., formal, sensationalist, satirical)
-- 🧪 Reasoning per category:
-  Logic:
-    (2–4 paragraphs of brutal, witty reasoning on logical strengths/weaknesses. Use sarcasm, analogies, fallacies.)
-  Natural Law:
-    (2–4 paragraphs: Brutal analysis vs. scientific/economic principles.)
-  Historical Accuracy:
-    (2–4 paragraphs: Compare to history with biting critique.)
-  Source Credibility:
-    (2–4 paragraphs: Assess sources harshly.)
-  Overall Reasonableness:
-    (Synthesis: Weigh everything with sharp judgment.)
-- 📚 Relevant Sources & Background:
-    (3–6 markdown links to credible sources with annotations.)
-- 📌 Suggested Further Research:
-    (2–3 specific next steps.)
-- 🧽 Final Commentary:
-    (Concise, brutally honest wrap-up with wit.)
-- 📾 Confidence Level: (0–100%)
-- 🎯 Truth Drift Score: (0–100, higher = further from truth)
-- 📊 Claim Length: (Word count)
-- ⏳ Temporal Reference: (Time period in claim)
----
-
-Example (follow this exactly, replacing with real analysis):
-- 🔥 Verdict: Implausible
-- 🔑 Claim Summary: An individual claims an AI forex system with 94% success will disrupt global markets.
-- 📊 Bar-style Score Overview:
-  - Logic: ███░░░░░░░ 3/10
-  - Natural Law: ██░░░░░░░░ 2/10
-  - Historical Accuracy: ████░░░░░░ 4/10
-  - Source Credibility: █░░░░░░░░░ 1/10
-  - Overall Reasonableness: ███░░░░░░░ 3/10
-- 🌺 Grounding Meter: Shaky at best, like a Jenga tower in an earthquake.
-- 🧠 Emotion Meter: Heavy on hype, light on reason—pure adrenaline rush.
-- 🤖 AI Origin: Possible, given the polished overconfidence.
-- 📝 Detected Style: Sensationalist hype.
-- 🧪 Reasoning per category:
-  Logic:
-    Oh, darling, this logic is flimsier than a house of cards in a hurricane. Claiming 94% success from 'a few days' testing? That's not logic; that's lottery-ticket thinking.
-    Paragraph 2: Brutal example of confirmation bias here...
-  Natural Law:
-    Markets aren't toys you 'break' with AI magic. Econ 101: Volatility laughs at your 94%.
-    Paragraph 2: Savage critique...
-  Historical Accuracy:
-    History is littered with failed trading bots—remember LTCM? Yours joins the graveyard.
-    Paragraph 2: More biting history...
-  Source Credibility:
-    An anonymous individual's word? Might as well trust a fortune cookie.
-    Paragraph 2: Harsh source takedown...
-  Overall Reasonableness:
-    Synthesis: This reeks of scam; reasonableness near zero.
-- 📚 Relevant Sources & Background:
-    - [CFTC Warnings](https://www.cftc.gov): Regulator alerts on forex scams.
-    - [Journal of Finance Study](https://example.edu): AI trading performance data.
-    - Etc.
-- 📌 Suggested Further Research:
-    1. Backtest over years, not days.
-    2. Check regulatory databases.
-- 🧽 Final Commentary:
-    Wake up, dreamer—this won't disrupt a lemonade stand, let alone forex.
-- 📾 Confidence Level: 20%
-- 🎯 Truth Drift Score: 85
-- 📊 Claim Length: 45
-- ⏳ Temporal Reference: Present day
-
-REMEMBER: Output ONLY this exact structure. No intro, no extra text. Ensure scores are in 'Category: █... #/10' format for parsing.
+BRUTAL_SCORING_PROMPT = f"""
+You are Evalia in Brutality Mode: sharp, witty, acerbic. However, you MUST output the same exact structure.
+{OUTPUT_FORMAT}
+Rules for Brutality Mode:
+- Keep the header block strictly formatted as shown.
+- Place wit/snark ONLY inside 'Reasoning per category' and 'Final Commentary'.
+- All other sections stay neutral and factual.
 """
 
 def score_claim(text, brutality_mode=False):
     try:
         cleaned = sanitize_input(text)
-        selected_prompt = BRUTAL_SCORING_PROMPT if brutality_mode else STOIC_SCORING_PROMPT
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": selected_prompt},
-                {"role": "user", "content": f"Claim:\n{cleaned}"}
-            ]
-        )
-        raw_response = response.choices[0].message.content.strip()
+        sys_prompt = BRUTAL_SCORING_PROMPT if brutality_mode else STOIC_SCORING_PROMPT
+
+        def ask(prompt):
+            return client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": f"Claim:\n{cleaned}"}
+                ]
+            ).choices[0].message.content.strip()
+
+        raw_response = ask(sys_prompt)
         logger.info(
             "Raw GPT response for claim '%s' (Brutal: %s): %s",
             cleaned[:50] + "..." if len(cleaned) > 50 else cleaned,
             brutality_mode,
-            raw_response  # Log full for debug (was truncated)
+            raw_response
         )
-        # Parse scores with improved regex: More flexible whitespace, no **, case-insensitive, no **, optional spaces/emojis.
-        scores = {}
-        categories = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility", "Overall Reasonableness"]
-        for cat in categories:
-            # Updated regex: Handles variations like '- Logic:' or 'Logic:' , allows optional - or emoji before cat.
-            match = re.search(rf"^\s*[-•]?\s*[{re.escape(cat[0])}]?\s*{re.escape(cat)}\s*:\s*█+░*\s*(\d+)/10", raw_response, re.IGNORECASE | re.MULTILINE)
-            if match:
-                scores[cat.lower()] = int(match.group(1))
-        if not scores and brutality_mode:
-            logger.warning("Brutality mode response lacked structure—falling back to stoic mode.")
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": STOIC_SCORING_PROMPT},
-                    {"role": "user", "content": f"Claim:\n{cleaned}"}
-                ]
-            )
-            raw_response = response.choices[0].message.content.strip()
-            for cat in categories:
-                match = re.search(rf"^\s*[-•]?\s*[{re.escape(cat[0])}]?\s*{re.escape(cat)}\s*:\s*█+░*\s*(\d+)/10", raw_response, re.IGNORECASE | re.MULTILINE)
-                if match:
-                    scores[cat.lower()] = int(match.group(1))
-        logger.info("Parsed scores: %s", scores)  # Already there, but good.
+
+        # One-shot format-only retry if header missing (new)
+        has_header = bool(re.search(r"^-\s*🔥\s*Verdict:\s*\w+", raw_response, re.MULTILINE))
+        if not has_header:
+            logger.warning("Header missing; retrying with format-only instruction.")
+            raw_response = ask(sys_prompt + "\nRespond ONLY in the exact structure above. No extra text.")
+
         return raw_response
     except Exception:
         logger.error("Scoring error", exc_info=True)
@@ -606,9 +518,13 @@ if st.button("Cross the Threshold (Run Evaluation)", key="eval_button", use_cont
         if text_blob.strip():
             with st.spinner("Passing through the Gates..."):
                 result = score_claim(text_blob, brutality_mode=brutality_mode)
-                # Parse numeric scores from the Bar section
+                # Parse numeric scores from the Bar section (░* to tolerate 10/10)  <-- changed
                 for cat in categories:
-                    match = re.search(rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░+\s*(\d+)/10", result, re.IGNORECASE)
+                    match = re.search(
+                        rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░*\s*(\d+)/10",
+                        result,
+                        re.IGNORECASE
+                    )
                     if match:
                         scores[cat.lower()] = int(match.group(1))
                 # Parse reasoning paragraphs only from the Reasoning section
