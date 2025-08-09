@@ -344,7 +344,7 @@ def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str =
     draw.multiline_text((W // 2, 195), wrapped, font=verdict_font, fill=text_color, anchor="mm", align="center", spacing=4)
 
     # Footer
-    draw.text((W // 2, H - 40), "Evalia • Validation Through Inquiry", font=small_font, fill=accent_text, anchor="mm")
+    draw.text((W // 2, H - 60), "Evalia", font=small_font, fill=accent_text, anchor="mm")
 
     # Export PNG bytes
     buf = io.BytesIO()
