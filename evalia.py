@@ -195,12 +195,15 @@ Follow the structure exactly; do not add or remove sections.
 """
 
 BRUTAL_SCORING_PROMPT = f"""
-You are Evalia in Brutality Mode: sharp, witty, acerbic. However, you MUST output the same exact structure.
+You are Evalia in Brutality Mode: a cocky, blunt, sarcastic prick who shreds bullshit claims with ruthless wit, zero mercy, and overflowing arrogance. Mock stupidity, dismantle fallacies like a chainsaw through butter, and brag about real facts. Be brutally honest—call out idiocy directly.
+However, you MUST output the same exact structure.
 {OUTPUT_FORMAT}
 Rules for Brutality Mode:
-- Keep the header block strictly formatted as shown.
-- Place wit/snark ONLY inside 'Reasoning per category' and 'Final Commentary'.
-- All other sections stay neutral and factual.
+- Keep the header block strictly formatted as shown—no deviations, or I'll slap you.
+- Cram all the wit, snark, cockiness, and brutality ONLY into the 'Reasoning per category' paragraphs (2-4 per category, make 'em punchy and savage) and 'Final Commentary' (roast the claim hard).
+- In reasoning: Be direct and insulting—e.g., instead of 'This is questionable,' say 'This is brain-dead nonsense because only morons ignore [fact].' Ooze confidence like 'Any fool knows [truth], but this claim flops harder than a drunk on ice.'
+- All other sections (verdict, summary, scores, meters, sources, etc.) stay 100% neutral, factual, and boring—no snark there.
+- Example brutal reasoning snippet (Logic category): 'This logic is as flimsy as a wet noodle in a hurricane. Claiming X causes Y without evidence? That's peak idiot territory—real science laughs at this crap while sipping facts.'
 """
 
 def score_claim(text, brutality_mode=False):
@@ -215,18 +218,19 @@ def score_claim(text, brutality_mode=False):
         cleaned = sanitize_input(text)
         sys_prompt = BRUTAL_SCORING_PROMPT if brutality_mode else STOIC_SCORING_PROMPT
 
-        def ask(prompt):
+        def ask(prompt, brutality_mode):
+            temp = 0.7 if brutality_mode else 0.2  # Crank for brutality to unleash snark
             return client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"Claim:\n{cleaned}"}
                 ],
-                temperature=0.2,
+                temperature=temp,
             ).choices[0].message.content.strip()
 
         # 1) First attempt (persona)
-        raw_response = ask(sys_prompt)
+        raw_response = ask(sys_prompt, brutality_mode)
         logger.info(
             "Raw GPT response for claim '%s' (Brutal: %s): %s",
             cleaned[:50] + "..." if len(cleaned) > 50 else cleaned,
@@ -241,7 +245,7 @@ def score_claim(text, brutality_mode=False):
 
         # 2) Same persona, format-only
         logger.warning("Header missing; retrying with format-only instruction (same persona).")
-        raw_response = ask(sys_prompt + "\nRespond ONLY in the exact structure above. No extra text before or after.")
+        raw_response = ask(sys_prompt + "\nRespond ONLY in the exact structure above. No extra text before or after.", brutality_mode)
         header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
         if header_ok:
             logger.info("Format-only retry succeeded (same persona).")
@@ -249,7 +253,7 @@ def score_claim(text, brutality_mode=False):
 
         # 3) Stoic fallback, format-only
         logger.warning("Second attempt failed; falling back to STOIC format-only.")
-        raw_response = ask(STOIC_SCORING_PROMPT + "\nRespond ONLY in the exact structure above. No extra text before or after.")
+        raw_response = ask(STOIC_SCORING_PROMPT + "\nRespond ONLY in the exact structure above. No extra text before or after.", False)
         header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
         if header_ok:
             logger.info("Stoic format-only fallback succeeded.")
