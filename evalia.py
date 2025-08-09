@@ -543,14 +543,19 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 if result:
                     st.markdown(f"**TL;DR:** {spicy_tldr(result)}")
 
-                # Stage 2 – Gates of Reason
+                                # Stage 2 – Gates of Reason
                 st.markdown("### 🚪 Gates of Reason")
                 gates = ["Logic", "Natural Law", "Historical Accuracy", "Source Credibility"]
+
+                # Guard: if parsing failed or section missing, keep it empty dict
+                _reasoning = reasoning_map or {}
+
                 for gate in gates:
                     score_val = scores.get(gate.lower(), 0)
                     with st.expander(f"{gate} Gate — {score_val}/10", expanded=False):
-                        snippet = reasoning_map.get(gate)
+                        snippet = _reasoning.get(gate, "")
                         st.write(snippet if snippet else "_No detail available for this gate._")
+
 
                 # Stage 3 – Trial of Evidence (preview here too)
                 st.markdown("### 📜 Trial of Evidence")
