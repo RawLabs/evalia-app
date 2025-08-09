@@ -422,19 +422,10 @@ def generate_pdf_report(entry):
 initialize_memory()
 st.set_page_config(page_title="Evalia - Claim Evaluator", layout="wide")
 
-# Background image / gradient
+# Background gradient (grey to red at bottom right)
 if 'background_image' not in st.session_state:
-    try:
-        image_path = "raw-cast-enterprises-backdrop.png"
-        if os.path.exists(image_path):
-            with open(image_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode()
-            st.session_state.background_image = f"data:image/png;base64,{encoded_string}"
-            logger.info("Background image loaded and cached: %s", image_path)
-    except Exception:
-        logger.error("Failed to load background image", exc_info=True)
-    if 'background_image' not in st.session_state:
-        st.session_state.background_image = "linear-gradient(to bottom, #1f1f1f, #2b2b2b)"
+    st.session_state.background_image = "linear-gradient(to bottom right, #4B4B4B, #8B0000)"
+    logger.info("Background gradient set: grey to red")
 
 background_image = st.session_state.background_image
 
@@ -443,7 +434,7 @@ st.markdown(
     f"""
     <style>
     .stApp {{
-        background-image: url("{background_image}");
+        background-image: {background_image};
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
