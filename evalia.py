@@ -235,11 +235,48 @@ def spicy_tldr(analysis_text: str) -> str:
 def extract_reasoning_map(text: str) -> dict:
     """
     Parse ONLY the 'Reasoning per category:' section into a dict:
-      { 'Logic': '...', 'Natural Law': '...', ... }
-    - Captures multi-line paragraphs until the next category OR next section.
+      { 'Logic': '...', 'Natural Law': '...', 'Historical Accuracy': '...', 'Source Credibility': '...', 'Overall Reasonableness': '...' }
+    - Captures multi-line paragraphs until the next category OR the next major section.
     - If the section is missing, returns {}.
     """
-    # ----------------------- Seal Renderer (Evalia-branded, robust) -----------------------
+    # 1) Find the 'Reasoning per category' anchor (emoji optional, bullet optional)
+    anchor = re.search(
+        r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$",
+        text, re.IGNORECASE | re.MULTILINE
+    )
+    if not anchor:
+        return {}
+
+    # 2) Slice after the anchor line
+    sub = text[anchor.end():]
+
+    # 3) Where a reasoning block should stop:
+    SECTION_BREAK = (
+        r"(?:^\s*(?:Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:|"
+        r"^\s*[-•]?\s*(?:📚\s*Relevant|📌\s*Suggested|🧽\s*Final|📾\s*Confidence|🎯\s*Truth|📊\s*Claim|⏳\s*Temporal|🔥\s*Verdict|🔑\s*Claim|📊\s*Bar)|\Z)"
+    )
+
+    cat_regex = re.compile(
+        rf"^\s*(Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:\s*(.+?)(?={SECTION_BREAK})",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL
+    )
+
+    out = {}
+    for m in cat_regex.finditer(sub):
+        key_raw = m.group(1).strip().lower()
+        key_map = {
+            "logic": "Logic",
+            "natural law": "Natural Law",
+            "historical accuracy": "Historical Accuracy",
+            "source credibility": "Source Credibility",
+            "overall reasonableness": "Overall Reasonableness",
+        }
+        key = key_map.get(key_raw, m.group(1).strip())
+        val = re.sub(r"\n{2,}", "\n\n", m.group(2).strip())
+        out[key] = val
+
+    return out
+# ----------------------- Seal Renderer (Evalia-branded) -----------------------
 def _text_width(draw, text, font):
     """Measure text width using textbbox for broad Pillow compatibility."""
     if not text:
@@ -271,11 +308,14 @@ def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str =
     - logo_path: PNG with transparent background preferred
     Returns PNG bytes.
     """
+    import io
+    from PIL import Image, ImageDraw, ImageFont
+
     W, H = 800, 800
     img = Image.new("RGBA", (W, H), color=(24, 24, 24, 255))
     draw = ImageDraw.Draw(img)
 
-    # Subtle vignette (single overlay; avoids repeated mode swaps)
+    # Subtle vignette
     vignette = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     vdraw = ImageDraw.Draw(vignette)
     vdraw.ellipse((40, 40, W - 40, H - 40), fill=(0, 0, 0, 0))
@@ -304,10 +344,9 @@ def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str =
             ly = 140
             img.alpha_composite(logo, (lx, ly))
     except Exception:
-        # Safe fail: continue without logo
-        pass
+        pass  # safe fail: render without logo
 
-    # Fonts (fallback to default if DejaVu not available)
+    # Fonts
     try:
         title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
         verdict_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 38)
@@ -330,50 +369,9 @@ def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str =
 
     # Export PNG bytes
     buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="PNG")  # RGB to keep file size modest
+    img.convert("RGB").save(buf, format="PNG")
     buf.seek(0)
     return buf.getvalue()
-
-
-    # 1) Find the 'Reasoning per category' anchor (emoji optional, bullet optional)
-    anchor = re.search(
-        r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$",
-        text, re.IGNORECASE | re.MULTILINE
-    )
-    if not anchor:
-        return {}
-
-    # 2) Slice after the anchor line
-    sub = text[anchor.end():]
-
-    # 3) Define where a reasoning block should stop:
-    #    - next category header
-    #    - OR start of another major section (e.g., 📚 Relevant Sources, 📌 Suggested Further Research, 🧽 Final Commentary, etc.)
-    SECTION_BREAK = r"(?:^\s*(?:Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:|" \
-                    r"^\s*[-•]?\s*(?:📚\s*Relevant|📌\s*Suggested|🧽\s*Final|📾\s*Confidence|🎯\s*Truth|📊\s*Claim|⏳\s*Temporal|🔥\s*Verdict|🔑\s*Claim|📊\s*Bar)|\Z)"
-
-    cat_regex = re.compile(
-        rf"^\s*(Logic|Natural\s+Law|Historical\s+Accuracy|Source\s+Credibility|Overall\s+Reasonableness)\s*:\s*(.+?)(?={SECTION_BREAK})",
-        re.IGNORECASE | re.MULTILINE | re.DOTALL
-    )
-
-    out = {}
-    for m in cat_regex.finditer(sub):
-        key_raw = m.group(1).strip()
-        # Normalize key to our UI labels
-        key_map = {
-            "logic": "Logic",
-            "natural law": "Natural Law",
-            "historical accuracy": "Historical Accuracy",
-            "source credibility": "Source Credibility",
-            "overall reasonableness": "Overall Reasonableness",
-        }
-        key = key_map.get(key_raw.lower(), key_raw)
-        # Clean up whitespace/newlines
-        val = re.sub(r"\n{2,}", "\n\n", m.group(2).strip())
-        out[key] = val
-
-    return out
 
 # ----------------------- PDF (kept simple) -----------------------
 def sanitize_for_pdf(text):
@@ -577,14 +575,22 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 change_hint = re.search(r"(?:Suggested Further Research|Further Research)[^\n]*\n(.+)", result, re.IGNORECASE)
                 st.write(change_hint.group(1).strip() if change_hint else "_No suggestions provided._")
 
-                                # Stage 5 – Seal of Passage (Evalia-branded)
+                                                # Stage 5 – Seal of Passage (Evalia-branded)
                 st.markdown("## 🏆 Seal of Passage")
                 verdict_line = spicy_tldr(result) if result else "Evaluation Complete"
 
                 seal_png = render_evalia_seal(
                     verdict_text=verdict_line,
                     brutality_mode=brutality_mode,
-                    logo_path="Evalia Logo Silver.png"  # ensure this file exists in working dir
+                    logo_path="Evalia Logo Silver.png"  # ensure file exists in same folder
+                )
+
+                st.image(seal_png, caption="Evalia Seal of Passage", use_column_width=True)
+                st.download_button(
+                    "Download Seal as PNG",
+                    data=seal_png,
+                    file_name="evalia_seal_of_passage.png",
+                    mime="image/png"
                 )
 
                 st.image(seal_png, caption="Evalia Seal of Passage")
