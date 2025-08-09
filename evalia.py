@@ -148,7 +148,6 @@ def fetch_url_text(url):
         return f"Error fetching URL: {str(e)}"
 
 # ----------------------- Prompts & Scoring -----------------------
-S# ----------------------- Prompts & Scoring -----------------------
 STOIC_SCORING_PROMPT = """
 You are Evalia, disciplined and precise. Your goal is to produce a comprehensive,
 research-backed claim evaluation that is both deeply analytical and useful for further investigation.
