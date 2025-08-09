@@ -593,14 +593,6 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                     mime="image/png"
                 )
 
-                st.image(seal_png, caption="Evalia Seal of Passage")
-                st.download_button(
-                    "Download Seal as PNG",
-                    data=seal_png,
-                    file_name="evalia_seal_of_passage.png",
-                    mime="image/png"
-                )
-
 
                 with st.expander("Full analysis (for the record)"):
                     st.markdown(result if result else "_No analysis generated._")
@@ -629,14 +621,16 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 st.success("✅ Analysis saved to memory.")
                 pdf_generated = generate_pdf_report(analysis_log)
                 if pdf_generated and os.path.exists(pdf_generated):
-                    with open(pdf_generated, "rb") as f:
-                        st.download_button(
-                            label="📄 Download PDF Report",
-                            data=f,
-                            file_name=pdf_generated,
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
+                 with open(pdf_generated, "rb") as f:
+                  st.download_button(
+                  label="📄 Download PDF Report",
+                  data=f,
+                  file_name=pdf_generated,
+                  mime="application/pdf",
+                  use_container_width=True,
+                  key="pdf_dl"
+                  )
+
                 else:
                     st.warning("PDF generation failed.")
         # -----------------------------------------------------------
