@@ -239,6 +239,102 @@ def extract_reasoning_map(text: str) -> dict:
     - Captures multi-line paragraphs until the next category OR next section.
     - If the section is missing, returns {}.
     """
+    # ----------------------- Seal Renderer (Evalia-branded, robust) -----------------------
+def _text_width(draw, text, font):
+    """Measure text width using textbbox for broad Pillow compatibility."""
+    if not text:
+        return 0
+    x0, y0, x1, y1 = draw.textbbox((0, 0), text, font=font)
+    return x1 - x0
+
+def _wrap_text_bbox(draw, text, font, max_width_px):
+    """Word-wrap text to fit max width using textbbox (no textlength dependency)."""
+    words = text.split()
+    if not words:
+        return ""
+    lines, line = [], words[0]
+    for w in words[1:]:
+        candidate = f"{line} {w}"
+        if _text_width(draw, candidate, font) <= max_width_px:
+            line = candidate
+        else:
+            lines.append(line)
+            line = w
+    lines.append(line)
+    return "\n".join(lines)
+
+def render_evalia_seal(verdict_text: str, brutality_mode: bool, logo_path: str = "Evalia Logo Silver.png") -> bytes:
+    """
+    Builds an 800x800 PNG 'Seal of Passage' using the Evalia logo (if present).
+    - verdict_text: short TL;DR or verdict line
+    - brutality_mode: ring color changes with persona
+    - logo_path: PNG with transparent background preferred
+    Returns PNG bytes.
+    """
+    W, H = 800, 800
+    img = Image.new("RGBA", (W, H), color=(24, 24, 24, 255))
+    draw = ImageDraw.Draw(img)
+
+    # Subtle vignette (single overlay; avoids repeated mode swaps)
+    vignette = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    vdraw = ImageDraw.Draw(vignette)
+    vdraw.ellipse((40, 40, W - 40, H - 40), fill=(0, 0, 0, 0))
+    vdraw.rectangle((0, 0, W, H), outline=None, fill=(0, 0, 0, 120))
+    img = Image.alpha_composite(img, vignette)
+    draw = ImageDraw.Draw(img)
+
+    # Colors
+    ring = (200, 40, 40, 255) if brutality_mode else (60, 120, 220, 255)
+    accent_dark = (80, 80, 80, 255)
+    text_color = (235, 235, 235, 255)
+    accent_text = (190, 190, 190, 255)
+
+    # Outer rings
+    draw.ellipse((60, 60, W - 60, H - 60), outline=ring, width=14)
+    draw.ellipse((82, 82, W - 82, H - 82), outline=accent_dark, width=3)
+
+    # Try to place the Evalia logo
+    try:
+        if os.path.exists(logo_path):
+            logo = Image.open(logo_path).convert("RGBA")
+            max_logo_w, max_logo_h = 440, 200
+            scale = min(max_logo_w / logo.width, max_logo_h / logo.height, 1.0)
+            logo = logo.resize((int(logo.width * scale), int(logo.height * scale)))
+            lx = (W - logo.width) // 2
+            ly = 140
+            img.alpha_composite(logo, (lx, ly))
+    except Exception:
+        # Safe fail: continue without logo
+        pass
+
+    # Fonts (fallback to default if DejaVu not available)
+    try:
+        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
+        verdict_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 38)
+        small_font = ImageFont.truetype("DejaVuSans.ttf", 24)
+    except Exception:
+        title_font = ImageFont.load_default()
+        verdict_font = ImageFont.load_default()
+        small_font = ImageFont.load_default()
+
+    # Title
+    draw.text((W // 2, 75), "Seal of Passage", font=title_font, fill=text_color, anchor="mm")
+
+    # Verdict text (wrapped)
+    max_text_w = int(W * 0.72)
+    wrapped = _wrap_text_bbox(draw, verdict_text or "Evaluation Complete", verdict_font, max_text_w)
+    draw.multiline_text((W // 2, 390), wrapped, font=verdict_font, fill=text_color, anchor="mm", align="center", spacing=8)
+
+    # Footer
+    draw.text((W // 2, H - 80), "Evalia • Validation Through Inquiry", font=small_font, fill=accent_text, anchor="mm")
+
+    # Export PNG bytes
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="PNG")  # RGB to keep file size modest
+    buf.seek(0)
+    return buf.getvalue()
+
+
     # 1) Find the 'Reasoning per category' anchor (emoji optional, bullet optional)
     anchor = re.search(
         r"^\s*[-•]?\s*🧪?\s*Reasoning per category\s*:\s*$",
@@ -476,29 +572,24 @@ if st.button("Cross the Threshold (Run Evaluation)", use_container_width=True):
                 change_hint = re.search(r"(?:Suggested Further Research|Further Research)[^\n]*\n(.+)", result, re.IGNORECASE)
                 st.write(change_hint.group(1).strip() if change_hint else "_No suggestions provided._")
 
-                # Stage 5 – Seal of Passage
+                                # Stage 5 – Seal of Passage (Evalia-branded)
                 st.markdown("## 🏆 Seal of Passage")
                 verdict_line = spicy_tldr(result) if result else "Evaluation Complete"
-                # Generate seal image
-                img = Image.new("RGB", (500, 500), color=(28, 28, 28))
-                draw = ImageDraw.Draw(img)
-                try:
-                    font = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
-                except:
-                    font = ImageFont.load_default()
-                border_color = (200, 0, 0) if brutality_mode else (0, 100, 200)
-                draw.ellipse((25, 25, 475, 475), outline=border_color, width=8)
-                draw.text((250, 220), "Seal of Passage", font=font, fill="white", anchor="mm")
-                draw.text((250, 270), verdict_line, font=font, fill="white", anchor="mm")
-                seal_buf = io.BytesIO()
-                img.save(seal_buf, format="PNG")
-                st.image(seal_buf.getvalue(), caption="Your Seal of Passage")  # FIXED
+
+                seal_png = render_evalia_seal(
+                    verdict_text=verdict_line,
+                    brutality_mode=brutality_mode,
+                    logo_path="Evalia Logo Silver.png"  # ensure this file exists in working dir
+                )
+
+                st.image(seal_png, caption="Evalia Seal of Passage")
                 st.download_button(
                     "Download Seal as PNG",
-                    data=seal_buf.getvalue(),
-                    file_name="seal_of_passage.png",
+                    data=seal_png,
+                    file_name="evalia_seal_of_passage.png",
                     mime="image/png"
                 )
+
 
                 with st.expander("Full analysis (for the record)"):
                     st.markdown(result if result else "_No analysis generated._")
