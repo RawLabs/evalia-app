@@ -220,17 +220,11 @@ def score_claim(text, brutality_mode=False):
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"Claim:\n{cleaned}"}
-<<<<<<< HEAD
-                ]
-            ).choices[0].message.content.strip()
-
-=======
                 ],
                 temperature=0.2,
             ).choices[0].message.content.strip()
 
         # 1) First attempt (persona)
->>>>>>> 3d34f3d (corrections)
         raw_response = ask(sys_prompt)
         logger.info(
             "Raw GPT response for claim '%s' (Brutal: %s): %s",
@@ -239,20 +233,12 @@ def score_claim(text, brutality_mode=False):
             raw_response
         )
 
-<<<<<<< HEAD
-        # One-shot format-only retry if header missing (new)
-        has_header = bool(re.search(r"^-\s*🔥\s*Verdict:\s*\w+", raw_response, re.MULTILINE))
-        if not has_header:
-            logger.warning("Header missing; retrying with format-only instruction.")
-            raw_response = ask(sys_prompt + "\nRespond ONLY in the exact structure above. No extra text.")
-
-=======
-        # Relaxed header detector: optional bullet, optional spaces, must contain '🔥 Verdict:'
+        # Relaxed header detector: optional bullet, must contain '🔥 Verdict:'
         header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
         if header_ok:
             return raw_response
 
-        # 2) Format-only retry under same persona
+        # 2) Same persona, format-only
         logger.warning("Header missing; retrying with format-only instruction (same persona).")
         raw_response = ask(sys_prompt + "\nRespond ONLY in the exact structure above. No extra text before or after.")
         header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
@@ -260,7 +246,7 @@ def score_claim(text, brutality_mode=False):
             logger.info("Format-only retry succeeded (same persona).")
             return raw_response
 
-        # 3) Last-resort: Stoic format-only (guarantee structure)
+        # 3) Stoic fallback, format-only
         logger.warning("Second attempt failed; falling back to STOIC format-only.")
         raw_response = ask(STOIC_SCORING_PROMPT + "\nRespond ONLY in the exact structure above. No extra text before or after.")
         header_ok = bool(re.search(r"^\s*[-•]?\s*🔥\s*Verdict\s*:\s*\S+", raw_response, re.MULTILINE))
@@ -268,14 +254,14 @@ def score_claim(text, brutality_mode=False):
             logger.info("Stoic format-only fallback succeeded.")
             return raw_response
 
-        # If everything failed, return what we have (UI will show 'No scores parsed')
         logger.error("All retries failed to produce a parseable header block.")
->>>>>>> 3d34f3d (corrections)
         return raw_response
 
     except Exception:
         logger.error("Scoring error", exc_info=True)
         return "Error: Unable to score claim due to an issue."
+
+
 
 # ----------------------- UI Text Helpers -----------------------
 def spicy_tldr(analysis_text: str) -> str:
@@ -561,31 +547,29 @@ if st.button("Cross the Threshold (Run Evaluation)", key="eval_button", use_cont
             with st.spinner("Passing through the Gates..."):
                 result = score_claim(text_blob, brutality_mode=brutality_mode)
                 # Parse numeric scores from the Bar section (░* to tolerate 10/10)  <-- changed
-                for cat in categories:
-                    match = re.search(
-<<<<<<< HEAD
-                        rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░*\s*(\d+)/10",
-                        result,
-                        re.IGNORECASE
-                    )
-=======
-    rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░*\s*(\d+)/10", result, re.IGNORECASE)
+                # Parse numeric scores from the Bar section (░* to tolerate 10/10)
+# Parse numeric scores from the Bar section (░* to tolerate 10/10)
+for cat in categories:
+    match = re.search(
+        rf"-\s*\**\s*{re.escape(cat)}\s*\**:\s*█+░*\s*(\d+)/10",
+        result,
+        re.IGNORECASE
+    )
+    if match:
+        scores[cat.lower()] = int(match.group(1))
 
->>>>>>> 3d34f3d (corrections)
-                    if match:
-                        scores[cat.lower()] = int(match.group(1))
-                # Parse reasoning paragraphs only from the Reasoning section
-                reasoning_map = extract_reasoning_map(result)
+# Parse reasoning paragraphs only from the Reasoning section
+reasoning_map = extract_reasoning_map(result)
 
-                analysis_log["scores"] = scores
-                analysis_log["analysis"] = result
-                logger.info("Parsed scores: %s", scores)
+analysis_log["scores"] = scores
+analysis_log["analysis"] = result
+logger.info("Parsed scores: %s", scores)
 
         # --------- TABBED OUTPUT (Quest Flow in Verdict) ----------
-        tabs = st.tabs(["Verdict (Quest)", "Evidence", "Export"])
+tabs = st.tabs(["Verdict (Quest)", "Evidence", "Export"])
 
         # ===== QUEST FLOW VERDICT TAB =====
-        with tabs[0]:
+with tabs[0]:
             if scores:
                 persona_name = "Brutal" if brutality_mode else "Stoic"
 
@@ -656,22 +640,22 @@ if st.button("Cross the Threshold (Run Evaluation)", key="eval_button", use_cont
                 st.info("No scores parsed. Try a clearer claim or include a URL/image.")
 
         # ===== Evidence Tab =====
-        with tabs[1]:
-            if url_text_display:
+with tabs[1]:
+          if url_text_display:
                 st.subheader("Extracted URL Text")
                 st.text_area("", url_text_display, height=180)
-            if img_analysis:
-                st.subheader("Image Analysis")
+                if img_analysis:
+                 st.subheader("Image Analysis")
                 st.info(
                     f"Extracted Text: {img_analysis.get('extracted_text','')}\n\n"
                     f"Description: {img_analysis.get('description','')}\n\n"
                     f"Assessment: {img_analysis.get('assessment','')}"
                 )
-            if not url_text_display and not img_analysis:
+          if not url_text_display and not img_analysis:
                 st.write("_No evidence inputs provided._")
 
         # ===== Export Tab =====
-        with tabs[2]:
+          with tabs[2]:
             if scores or img_analysis:
                 save_to_memory(analysis_log)
                 st.success("✅ Analysis saved to memory.")
