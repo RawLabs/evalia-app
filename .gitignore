@@ -11,5 +11,7 @@ dist/
 .DS_Store
 .streamlit/secrets.toml
 static/*.log
-evalia_debug.log
+logs/
+*.pdf
 evalia_memory.json
+data/*.json
