@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+build/
+dist/
+*.egg-info/
+.DS_Store
+.streamlit/secrets.toml
+static/*.log
+evalia_debug.log
+evalia_memory.json

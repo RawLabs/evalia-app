@@ -1,0 +1,15 @@
+fpdf==1.7.2
+openai==1.98.0
+pandas==2.2.3
+pillow>=10.0.0,<11.0.0
+plotly==6.2.0
+requests==2.32.3
+streamlit==1.37.0
+python-dotenv==1.1.1
+GitPython==3.1.44
+
+# to set up env. source ~/evalia/bin/activate
+
+
+
+
